@@ -180,3 +180,38 @@ func TestDeleteWorkout_TrailingDeletePath(t *testing.T) {
 	c := api.NewClient(srv.URL+"/v1/", "SK", 0)
 	require.NoError(t, endpoints.DeleteWorkout(context.Background(), c, "wk1"))
 }
+
+func TestWorkoutList_Summary(t *testing.T) {
+	l := endpoints.WorkoutList{Items: []endpoints.RemoteSyncedWorkout{
+		{Key: "a", ActivityID: 1, TotalDistance: 5000, TotalTime: 1800, TotalAscent: 50, TotalDescent: 40},
+		{Key: "b", ActivityID: 1, TotalDistance: 3000, TotalTime: 1200, TotalAscent: 20, TotalDescent: 15},
+		{Key: "c", ActivityID: 5, TotalDistance: 10000, TotalTime: 3600, TotalAscent: 200, TotalDescent: 180},
+	}}
+	s := l.Summary()
+	assert.Equal(t, 3, s.Count)
+	assert.InDelta(t, 18000.0, s.TotalDistance, 0.001)
+	assert.InDelta(t, 6600.0, s.TotalTime, 0.001)
+	assert.InDelta(t, 270.0, s.TotalAscent, 0.001)
+	assert.InDelta(t, 235.0, s.TotalDescent, 0.001)
+	require.Len(t, s.ByActivity, 2)
+	assert.Equal(t, 2, s.ByActivity[1].Count)
+	assert.InDelta(t, 8000.0, s.ByActivity[1].Distance, 0.001)
+	assert.Equal(t, 1, s.ByActivity[5].Count)
+
+	pretty := s.Pretty()
+	assert.Contains(t, pretty, "workouts:  3")
+	assert.Contains(t, pretty, "18.00km")
+	assert.Contains(t, pretty, "1:50:00")
+	assert.Contains(t, pretty, "Per activity:")
+
+	listPretty := l.Pretty()
+	assert.Contains(t, listPretty, "3 workouts  18.00km  1:50:00")
+}
+
+func TestWorkoutList_Summary_Empty(t *testing.T) {
+	l := endpoints.WorkoutList{}
+	s := l.Summary()
+	assert.Equal(t, 0, s.Count)
+	assert.Nil(t, s.ByActivity)
+	assert.Contains(t, s.Pretty(), "workouts:  0")
+}
