@@ -1,15 +1,19 @@
 package cmd
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 
 	"github.com/tajchert/suuntool/internal/api"
+	"github.com/tajchert/suuntool/internal/auth"
 	"github.com/tajchert/suuntool/internal/output"
 	"github.com/tajchert/suuntool/internal/session"
 )
@@ -131,4 +135,55 @@ func pickTimeout() time.Duration {
 		return flagTimeout
 	}
 	return 30 * time.Second
+}
+
+// totpHeaders returns the x-totp header required by certain write endpoints
+// (reactions, comments, settings-safe variant, email/phone change). The TOTP
+// is derived from the session's email + server-time offset; values rotate
+// every 30 seconds, so callers should compute fresh per request.
+func totpHeaders(s *session.Session) map[string]string {
+	return map[string]string{
+		"x-totp": auth.GenerateTOTP(s.Email, s.OffsetMS),
+	}
+}
+
+// mergeHeaders returns a new map combining a and b (b wins on collision).
+// Used to merge totp + Content-Type without mutating shared maps.
+func mergeHeaders(a, b map[string]string) map[string]string {
+	out := make(map[string]string, len(a)+len(b))
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}
+
+// confirm prompts the user for a y/N confirmation. Behavior:
+//   - yes == true: immediately returns true (used by --yes flags).
+//   - stdin is a TTY: writes prompt + " [y/N] " to stderr, reads a line,
+//     returns true only on case-insensitive "y" or "yes".
+//   - stdin is NOT a TTY and yes == false: returns a *api.Error{Code:"USAGE", Exit:2}.
+//     This prevents agents/scripts from accidentally bypassing destructive
+//     operations by piping nothing into stdin.
+func confirm(prompt string, yes bool) (bool, error) {
+	if yes {
+		return true, nil
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return false, &api.Error{
+			Code:    "USAGE",
+			Message: "refusing to run destructive operation without --yes on a non-TTY",
+			Hint:    "Pass --yes to confirm non-interactively",
+			Exit:    ExitUsage,
+		}
+	}
+	fmt.Fprintf(os.Stderr, "%s [y/N] ", prompt)
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		return false, nil
+	}
+	ans := strings.ToLower(strings.TrimSpace(scanner.Text()))
+	return ans == "y" || ans == "yes", nil
 }
