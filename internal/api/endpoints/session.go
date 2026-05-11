@@ -40,9 +40,9 @@ func Login(ctx context.Context, baseURL, email, password string) (*RemoteUserSes
 	totp := auth.GenerateTOTP(email, 0)
 
 	params := []auth.Param{
-		{"l", email},
-		{"p", password},
-		{"totp", totp},
+		{Key: "l", Value: email},
+		{Key: "p", Value: password},
+		{Key: "totp", Value: totp},
 	}
 	sig := auth.SignParams("login2", params)
 	salt := auth.RandomSalt()
