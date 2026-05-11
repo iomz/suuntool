@@ -9,19 +9,33 @@ $ suuntool login --email you@example.com
 Password:
 Logged in as alice (you@example.com). Session saved to ~/.config/suuntool/session.json.
 
-$ suuntool whoami
-username     : alice
-email        : you@example.com
-userKey      : k1
-country      : FI
+$ suuntool workouts list --limit 5
+Date              Act  Distance  Duration  Ascent  Key
+2026-05-11 07:42  1    8.42 km   0:44:18   62 m    wk_abc123
+2026-05-10 18:05  3    32.10 km  1:12:04   210 m   wk_abc124
+2026-05-09 06:30  11   5.80 km   1:05:00   140 m   wk_abc125
+2026-05-08 07:10  1    10.05 km  0:52:30   78 m    wk_abc126
+2026-05-07 19:20  6    1.20 km   0:28:11   0 m     wk_abc127
+5 workouts  57.57km  3:42:21
 
-$ suuntool profile follow --format json
-{
-  "followers": 12,
-  "followings": 8,
-  "blocked": 0,
-  "blockedBy": 0
-}
+$ suuntool workouts list --since 14d --summary
+workouts:  5
+distance:  57.57km
+time:      3:42:21
+ascent:    490 m
+descent:   480 m
+
+Per activity:
+Act  Count  Distance  Duration  ΔWoW
+1    2      18.47km   1:36:48   +1
+3    1      32.10km   1:12:04   0
+6    1      1.20km    0:28:11   0
+11   1      5.80km    1:05:00   -1
+
+$ suuntool wellness sleep --since 3d | jq -c '{date:(.startTime/1000|todate), score:.sleepScore, hrBpm:(.avgHeartRate*60)}'
+{"date":"2026-05-10T22:35:00Z","score":82,"hrBpm":54.6}
+{"date":"2026-05-11T22:48:00Z","score":76,"hrBpm":57.1}
+{"date":"2026-05-12T22:21:00Z","score":88,"hrBpm":52.3}
 ```
 
 ## Why
