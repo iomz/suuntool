@@ -62,6 +62,7 @@ suuntool workouts stats                             # aggregate stats for you
 suuntool workouts count                             # workout count
 suuntool workouts sml wk_abc123 -o wk.sml.json      # full ~5MB sample data
 suuntool workouts fit wk_abc123 -o wk.fit           # binary .fit export
+suuntool workouts export wk_abc123 --bundle ./wk    # metadata+sml+fit+ext+comments in one shot
 
 # 24/7 wellness (gzipped NDJSON, decoded on the fly)
 suuntool wellness sleep                             # pretty table on TTY, raw NDJSON when piped
@@ -133,6 +134,7 @@ NO_COLOR=1 suuntool whoami                          # plain-text TTY
 | `workouts count` | `GET /v1/workouts/count` | yes | Requires `until` + `sharingFlags` server-side (defaults handled) |
 | `workouts sml <key>` | `GET /v1/workouts/{key}/sml` | yes | Full ~5MB sample-by-sample JSON. Raw passthrough — use `-o` |
 | `workouts fit <key>` | `GET /v1/workout/exportFit/{key}` | yes | Binary `.fit`. Raw passthrough — use `-o` |
+| `workouts export <key> --bundle <dir>` | (composite) | yes | One-shot bundle: writes `workout.json`, `workout.sml.json`, `workout.fit`, `extensions.json`, `comments.json` into `<dir>`. `--no-fit`/`--no-sml`/`--no-extensions`/`--no-comments` skip parts; `--force` overwrites a non-empty dir |
 
 ### Wellness (24/7 health timeline)
 
