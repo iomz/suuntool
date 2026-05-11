@@ -42,7 +42,7 @@ $ suuntool wellness sleep --since 3d | jq -c '{date:(.startTime/1000|todate), sc
 
 - **Agent-ready.** Stable exit codes, JSON-on-pipe defaults, machine-readable error envelopes, and `suuntool endpoints --format json` so an LLM can map intents to commands without scraping help text.
 - **Scriptable.** One static binary. No Python, no node, no app sandbox.
-- **Honest.** Every endpoint is reverse-engineered from the shipping app and the signing logic is locked to golden vectors, so when the contract drifts, the tool fails loudly instead of pretending.
+- **Honest.** The signing logic is locked to golden vectors, so when the contract drifts, the tool fails loudly instead of pretending.
 
 ## Install
 
@@ -240,7 +240,7 @@ In `--format json` mode, errors are emitted to stderr as:
 **This is an unofficial, experimental tool. Use at your own risk.**
 
 - `suuntool` is **not affiliated with, endorsed by, or supported by Suunto Oy, Amer Sports, or Sports-Tracker**. All trademarks belong to their respective owners.
-- The Suunto API is **not public**. This client is reverse-engineered from the shipping Android app and the wire contract can change without notice. A future app release may break this tool with no warning.
+- The Suunto API is **not public**. The wire contract can change without notice. A future app release may break this tool with no warning.
 - Using this tool may **violate Suunto's Terms of Service**. Read them before you run anything. Heavy or abusive usage may get your account flagged or banned. The author accepts no responsibility for account actions taken against you.
 - Provided **"as is", without warranty of any kind**, express or implied, including but not limited to merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from your use of the software.
 - For **your own data only.** Do not use this tool to scrape, harvest, or aggregate other users' data — you'll get your account banned, and you may be breaking the law.
