@@ -1,0 +1,185 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/tajchert/suuntool/internal/api/endpoints"
+	"github.com/tajchert/suuntool/internal/auth"
+)
+
+var workoutsCmd = &cobra.Command{
+	Use:   "workouts",
+	Short: "Workout commands (list, get, count)",
+	Long:  `Read-only workout commands. Requires an active session (run 'suuntool login' first).`,
+}
+
+// parseSince converts an empty string, an integer string, or an RFC3339
+// string to a unix millisecond timestamp. Returns 0 for an empty string.
+func parseSince(s string) (int64, error) {
+	if s == "" {
+		return 0, nil
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return 0, fmt.Errorf("--since: cannot parse %q as integer or RFC3339 timestamp", s)
+	}
+	return t.UnixMilli(), nil
+}
+
+var (
+	workoutsListLimit  int
+	workoutsListSince  string
+	workoutsListOffset int
+)
+
+var workoutsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List your workouts (paginated)",
+	Long: `List your synced workouts. Results are paginated; use --limit and --since
+to control the window. If --limit exceeds one page (100), the command
+automatically fetches subsequent pages using the server-returned cursor.`,
+	Example: `  suuntool workouts list --limit 5
+  suuntool workouts list --since 2026-01-01T00:00:00Z --format json
+  suuntool workouts list -o workouts.json`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if workoutsListLimit > 100 {
+			return fmt.Errorf("--limit must be <= 100 (server maximum per page); got %d", workoutsListLimit)
+		}
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+
+		since, err := parseSince(workoutsListSince)
+		if err != nil {
+			return err
+		}
+
+		limit := workoutsListLimit
+		if limit == 0 {
+			limit = 20
+		}
+
+		// Fetch pages, advancing the Since cursor, until we have enough items
+		// or the server returns fewer items than requested (last page).
+		var all []endpoints.RemoteSyncedWorkout
+		var lastUntil int64
+		offset := workoutsListOffset
+		curSince := since
+
+		for {
+			remaining := limit - len(all)
+			if remaining <= 0 {
+				break
+			}
+			pageLimit := remaining
+			if pageLimit > 100 {
+				pageLimit = 100
+			}
+
+			page, err := endpoints.ListWorkouts(ctx, c, endpoints.ListWorkoutsOpts{
+				Since:  curSince,
+				Limit:  pageLimit,
+				Offset: offset,
+			})
+			if err != nil {
+				return err
+			}
+
+			all = append(all, page.Items...)
+			lastUntil = page.Until
+
+			// Stop if we got a partial page (last page) or nothing.
+			if len(page.Items) < pageLimit {
+				break
+			}
+			// Advance cursor for next page. Reset offset after first page.
+			curSince = page.Until
+			offset = 0
+		}
+
+		return emit(&endpoints.WorkoutList{Items: all, Until: lastUntil})
+	},
+}
+
+var workoutsGetCmd = &cobra.Command{
+	Use:   "get <key>",
+	Short: "Fetch a single workout by key",
+	Args:  cobra.ExactArgs(1),
+	Example: `  suuntool workouts get abc123
+  suuntool workouts get abc123 --format json`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		w, err := endpoints.GetWorkout(ctx, c, args[0])
+		if err != nil {
+			return err
+		}
+		return emit(w)
+	},
+}
+
+var (
+	workoutsCountUntil        string
+	workoutsCountSharingFlags int
+)
+
+var workoutsCountCmd = &cobra.Command{
+	Use:   "count",
+	Short: "Count your workouts",
+	Long: `Return the count and totalCount of your synced workouts from the server.
+Both --until and --sharing-flags are required server-side; this command
+defaults them so you can invoke with no flags. Pass --until as an RFC3339
+timestamp or unix milliseconds; omitting it uses the current time.`,
+	Example: `  suuntool workouts count
+  suuntool workouts count --until 2026-01-01T00:00:00Z
+  suuntool workouts count --sharing-flags 1 --format json`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+
+		untilMS, err := parseSince(workoutsCountUntil)
+		if err != nil {
+			return err
+		}
+		if untilMS <= 0 {
+			untilMS = auth.NowMS()
+		}
+
+		wc, err := endpoints.CountWorkouts(ctx, c, untilMS, workoutsCountSharingFlags)
+		if err != nil {
+			return err
+		}
+		return emit(wc)
+	},
+}
+
+func init() {
+	workoutsListCmd.Flags().IntVar(&workoutsListLimit, "limit", 20, "Number of workouts to fetch (max 100 per server page)")
+	workoutsListCmd.Flags().StringVar(&workoutsListSince, "since", "", "Only fetch workouts after this time (RFC3339 or unix ms)")
+	workoutsListCmd.Flags().IntVar(&workoutsListOffset, "offset", 0, "Page offset for first request")
+
+	workoutsCountCmd.Flags().StringVar(&workoutsCountUntil, "until", "", "Upper bound timestamp (RFC3339 or unix ms; default = now)")
+	workoutsCountCmd.Flags().IntVar(&workoutsCountSharingFlags, "sharing-flags", 0, "Sharing flags filter (server-required param)")
+
+	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd)
+	rootCmd.AddCommand(workoutsCmd)
+}
