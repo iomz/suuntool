@@ -32,9 +32,10 @@ type CommentList struct {
 	Items []Comment `json:"items"`
 }
 
-// Pretty renders comments as an aligned table. Long comment bodies are
-// truncated to keep the layout sane; --format json carries the full text.
-func (l CommentList) Pretty() string {
+// Table returns the comment list as headers + rows. Long comment bodies are
+// truncated to keep the aligned layout sane; --format json (and the raw
+// `comment` field on each item) carries the full text.
+func (l CommentList) Table() ([]string, [][]string) {
 	headers := []string{"Time", "User", "Comment", "Key"}
 	rows := make([][]string, 0, len(l.Items))
 	for _, c := range l.Items {
@@ -45,6 +46,12 @@ func (l CommentList) Pretty() string {
 		}
 		rows = append(rows, []string{ts, username, truncate(c.Comment, 60), c.Key})
 	}
+	return headers, rows
+}
+
+// Pretty renders comments as an aligned table.
+func (l CommentList) Pretty() string {
+	headers, rows := l.Table()
 	noun := "comments"
 	if len(l.Items) == 1 {
 		noun = "comment"

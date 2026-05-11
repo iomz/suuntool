@@ -48,7 +48,7 @@ Suunto / Sports-Tracker API. v1 covers login and profile read-side endpoints.
 
 Environment variables:
   SUUNTOOL_SESSION_FILE  Override session storage path
-  SUUNTOOL_FORMAT        Default output format (json|pretty|auto)
+  SUUNTOOL_FORMAT        Default output format (json|pretty|tsv|auto)
   SUUNTOOL_TIMEOUT       Default HTTP timeout (e.g. 30s)
   NO_COLOR               Disable ANSI styling
 
@@ -73,7 +73,7 @@ func Execute() {
 func init() {
 	pf := rootCmd.PersistentFlags()
 	pf.StringVarP(&flagOutput, "output", "o", "", "Write to file (format from extension or --format)")
-	pf.StringVarP(&flagFormat, "format", "f", "auto", "Output format: json|pretty|auto")
+	pf.StringVarP(&flagFormat, "format", "f", "auto", "Output format: json|pretty|tsv|auto")
 	pf.BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-error logs")
 	pf.BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose (debug) logs to stderr")
 	pf.BoolVar(&flagNoColor, "no-color", false, "Disable ANSI styling")

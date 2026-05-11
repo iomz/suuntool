@@ -20,14 +20,23 @@ type Prettier interface {
 	Pretty() string
 }
 
-// resolveFormat maps the requested format to either "json" or "pretty".
-// For empty/"auto" it picks based on IsTTY.
+// Tabular is implemented by list-shaped values that can produce a header row
+// plus rows of cells. Used to render --format tsv (and reused by Pretty() for
+// aligned text tables in endpoint code).
+type Tabular interface {
+	Table() (headers []string, rows [][]string)
+}
+
+// resolveFormat maps the requested format to "json", "pretty", or "tsv".
+// For empty/"auto" it picks pretty on TTY, JSON otherwise.
 func resolveFormat(f string, isTTY bool) string {
 	switch strings.ToLower(f) {
 	case "json":
 		return "json"
 	case "pretty":
 		return "pretty"
+	case "tsv":
+		return "tsv"
 	default:
 		// "auto" or ""
 		if isTTY {
@@ -47,9 +56,42 @@ func Render(w io.Writer, v any, opts Opts) error {
 		}
 		// Fall back to indented JSON when no Pretty() method.
 		return encodeJSON(w, v)
+	case "tsv":
+		if t, ok := v.(Tabular); ok {
+			return encodeTSV(w, t)
+		}
+		// Non-tabular values (single records, scalars) fall back to JSON so
+		// pipelines still get something machine-parseable.
+		return encodeJSON(w, v)
 	default: // "json"
 		return encodeJSON(w, v)
 	}
+}
+
+// encodeTSV writes headers + rows as tab-separated values with \n line
+// endings. Embedded tabs/newlines/carriage-returns in cells are replaced with
+// a single space so each record stays on one line.
+func encodeTSV(w io.Writer, t Tabular) error {
+	headers, rows := t.Table()
+	if _, err := fmt.Fprintln(w, joinTSV(headers)); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if _, err := fmt.Fprintln(w, joinTSV(r)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var tsvScrubber = strings.NewReplacer("\t", " ", "\n", " ", "\r", " ")
+
+func joinTSV(cells []string) string {
+	scrubbed := make([]string, len(cells))
+	for i, c := range cells {
+		scrubbed[i] = tsvScrubber.Replace(c)
+	}
+	return strings.Join(scrubbed, "\t")
 }
 
 func encodeJSON(w io.Writer, v any) error {
@@ -90,6 +132,8 @@ func RenderToFile(path string, v any, opts Opts) error {
 	if resolved == "" || strings.ToLower(resolved) == "auto" {
 		ext := strings.ToLower(filepath.Ext(path))
 		switch ext {
+		case ".tsv":
+			resolved = "tsv"
 		case ".json":
 			resolved = "json"
 		default:
