@@ -16,6 +16,11 @@ import (
 
 const DefaultBaseURL = "https://api.sports-tracker.com/apiserver/v1/"
 
+// TimelineBaseURL hosts the 24/7 wellness streams (sleep, activity, recovery, sleepstages).
+// It uses STTAuthorization just like the ASKO base URL, but a different response shape
+// (gzipped NDJSON, no AskoResponse envelope).
+const TimelineBaseURL = "https://247.sports-tracker.com/"
+
 // Client is a thin HTTP client that injects STTAuthorization and maps HTTP
 // status codes to typed errors. Construct via NewClient.
 type Client struct {
@@ -38,10 +43,13 @@ func NewClient(baseURL, sessionKey string, timeout time.Duration) *Client {
 	}
 }
 
-// Do executes the request, applies common headers, and maps HTTP errors to *Error.
-// On 2xx it returns the raw body. Envelope decoding is the caller's responsibility
-// (DecodeAsko for ASKO endpoints).
-func (c *Client) Do(ctx context.Context, method, path string, body io.Reader, headers map[string]string) ([]byte, error) {
+// NewTimelineClient is a convenience wrapper for endpoints on TimelineBaseURL.
+func NewTimelineClient(sessionKey string, timeout time.Duration) *Client {
+	return NewClient(TimelineBaseURL, sessionKey, timeout)
+}
+
+// newRequest builds an *http.Request with all common headers applied.
+func (c *Client) newRequest(ctx context.Context, method, path string, body io.Reader, headers map[string]string) (*http.Request, error) {
 	u, err := c.resolve(path)
 	if err != nil {
 		return nil, &Error{Code: "USAGE", Message: err.Error(), Exit: 2}
@@ -57,6 +65,17 @@ func (c *Client) Do(ctx context.Context, method, path string, body io.Reader, he
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
+	}
+	return req, nil
+}
+
+// Do executes the request, applies common headers, and maps HTTP errors to *Error.
+// On 2xx it returns the raw body. Envelope decoding is the caller's responsibility
+// (DecodeAsko for ASKO endpoints).
+func (c *Client) Do(ctx context.Context, method, path string, body io.Reader, headers map[string]string) ([]byte, error) {
+	req, err := c.newRequest(ctx, method, path, body, headers)
+	if err != nil {
+		return nil, err
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

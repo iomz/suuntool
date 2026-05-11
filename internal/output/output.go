@@ -58,6 +58,29 @@ func encodeJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
+// WriteRaw streams r to the given file path (truncating). Intended for binary or
+// extremely large payloads (e.g. workout SML/FIT exports) that should bypass the
+// json/pretty formatter. This is the ONE sanctioned bypass of Render — every other
+// command must go through Render/RenderToFile via emit().
+func WriteRaw(path string, r io.Reader) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, r)
+	return err
+}
+
+// WriteRawStdout streams r to os.Stdout. Same caveat as WriteRaw.
+func WriteRawStdout(r io.Reader) error {
+	_, err := io.Copy(os.Stdout, r)
+	return err
+}
+
 // RenderToFile writes v to the file at path.
 // When opts.Format is empty or "auto", the format is inferred from the file
 // extension (.json → "json"; anything else → "json" as default).

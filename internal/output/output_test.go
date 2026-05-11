@@ -2,6 +2,7 @@ package output_test
 
 import (
 	"bytes"
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,4 +46,20 @@ func TestRender_FormatFromExtension(t *testing.T) {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.True(t, strings.Contains(string(data), `"name": "x"`))
+}
+
+func TestWriteRaw_StreamsToFile(t *testing.T) {
+	payload := make([]byte, 1024)
+	_, err := rand.Read(payload)
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "raw.bin")
+
+	err = output.WriteRaw(path, bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, payload, got)
 }
