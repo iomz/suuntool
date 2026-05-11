@@ -49,10 +49,30 @@ suuntool login --email you@example.com              # interactive password promp
 echo 'hunter2' | suuntool login \
    --email you@example.com --password-stdin         # non-interactive (CI, agents)
 
+# Profile
 suuntool whoami                                     # current session user
 suuntool profile settings                           # full user settings DTO
 suuntool profile follow                             # follower/following counts
 suuntool profile user alice                         # look up any user by handle
+
+# Workouts
+suuntool workouts list --limit 5                    # most recent 5 workouts
+suuntool workouts get wk_abc123                     # one workout's metadata
+suuntool workouts stats                             # aggregate stats for you
+suuntool workouts count                             # workout count
+suuntool workouts sml wk_abc123 -o wk.sml.json      # full ~5MB sample data
+suuntool workouts fit wk_abc123 -o wk.fit           # binary .fit export
+
+# 24/7 wellness (gzipped NDJSON, decoded on the fly)
+suuntool wellness sleep      --since 0 -o sleep.ndjson
+suuntool wellness activity   --since 0 | jq '.entryData.stepCount'
+suuntool wellness recovery   --out ./wellness
+suuntool wellness sleepstages --out ./wellness
+
+# Other reads
+suuntool partner-connections                        # Strava/TrainingPeaks/… links
+suuntool gear list                                  # paired gear
+suuntool maps library --device-serial SN123         # offline-map regions
 
 suuntool doctor                                     # connectivity + session check
 suuntool logout
@@ -80,19 +100,61 @@ NO_COLOR=1 suuntool whoami                          # plain-text TTY
 
 ## Commands
 
+### Session
+
 | Command | Endpoint | Auth | Notes |
 |---------|----------|------|-------|
 | `login --email <e>` | `POST /v1/login2` | no | Reads password from a no-echo TTY prompt or `--password-stdin` |
 | `logout` | `GET /v1/logout` | yes | Invalidates server-side, clears local session |
 | `whoami` | `GET /v1/user` | yes | Current session user |
+| `doctor` | `GET /v1/servertime` + session check | no | Probe connectivity and session validity |
+
+### Profile
+
+| Command | Endpoint | Auth | Notes |
+|---------|----------|------|-------|
 | `profile settings` | `GET /v1/user/settings` | yes | Full user settings DTO (passed through) |
 | `profile follow` | `GET /v1/user/follow` | yes | Follower / following / blocked counts |
 | `profile user <name>` | `GET /v1/user/name/{name}` | yes | Look up a user by username |
-| `doctor` | `GET /v1/servertime` + session check | no | Probe connectivity and session validity |
+
+### Workouts
+
+| Command | Endpoint | Auth | Notes |
+|---------|----------|------|-------|
+| `workouts list` | `GET /v1/workouts` | yes | Paginated list with `--since`, `--limit`, `--offset`; returns cursor `until` |
+| `workouts get <key>` | `GET /v1/workouts/{key}` | yes | One workout's metadata |
+| `workouts stats [user]` | `GET /v1/workouts/{user}/stats` | yes | Aggregate totals + per-activity breakdown |
+| `workouts count` | `GET /v1/workouts/count` | yes | Requires `until` + `sharingFlags` server-side (defaults handled) |
+| `workouts sml <key>` | `GET /v1/workouts/{key}/sml` | yes | Full ~5MB sample-by-sample JSON. Raw passthrough — use `-o` |
+| `workouts fit <key>` | `GET /v1/workout/exportFit/{key}` | yes | Binary `.fit`. Raw passthrough — use `-o` |
+
+### Wellness (24/7 health timeline)
+
+| Command | Endpoint | Auth | Notes |
+|---------|----------|------|-------|
+| `wellness sleep` | `GET 247.../v1/sleep/export` | yes | NDJSON; `--since <ms>`, `--out <dir>` |
+| `wellness activity` | `GET 247.../v1/activity/export` | yes | Per-15-min `hr`/`steps`/`energy`. **`hr` is in Hz** — ×60 for BPM |
+| `wellness recovery` | `GET 247.../v1/recovery/export` | yes | `balance` ∈ 0..1 = "wake-up resources" |
+| `wellness sleepstages` | `GET 247.../v1/sleepstages/export` | yes | Stage timeline (light/deep/REM/…) |
+
+### Other reads
+
+| Command | Endpoint | Auth | Notes |
+|---------|----------|------|-------|
+| `partner-connections` | `GET /v1/partnerconnection` | yes | Linked OAuth partners (Strava, TrainingPeaks, …) |
+| `gear list` | `GET /v1/gear` | yes | Gear paired to the account |
+| `maps library --device-serial <sn>` | `GET /v1/maps/library` | yes | Offline-map regions. Serial is `Source: "suunto-<sn>"` in `/sml` data |
+
+### Discovery / meta
+
+| Command | Endpoint | Auth | Notes |
+|---------|----------|------|-------|
 | `endpoints` | — | no | Stable command → method/path table for agents (`--format json`) |
 | `version` | — | no | Build version |
 
 Run `suuntool <command> --help` for the full reference of any command. The mapping above is also available as a JSON document via `suuntool endpoints --format json`.
+
+> **Raw passthrough.** `workouts sml`, `workouts fit`, and the four `wellness` subcommands stream their response body straight to stdout (or `-o`) without going through the `--format` pretty-printer. The body is already in its final shape (large JSON / binary `.fit` / NDJSON) and reformatting it would waste memory and lose fidelity.
 
 ## Exit codes
 
