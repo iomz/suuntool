@@ -24,20 +24,72 @@ var workoutsCmd = &cobra.Command{
 	Long:  `Read-only workout commands. Requires an active session (run 'suuntool login' first).`,
 }
 
-// parseSince converts an empty string, an integer string, or an RFC3339
-// string to a unix millisecond timestamp. Returns 0 for an empty string.
+// parseSince converts a human-friendly time spec to a unix millisecond
+// timestamp. Returns 0 for an empty string. Accepted forms:
+//   - "" → 0
+//   - integer (unix milliseconds), e.g. 1730000000000
+//   - RFC3339 timestamp, e.g. 2026-01-01T00:00:00Z
+//   - calendar date YYYY-MM-DD (interpreted as 00:00 UTC)
+//   - duration ago: "7d", "12h", "30m", "2w", "1y" (also Go-native "2h45m")
+//   - keywords: "today", "yesterday", "last-week", "last-month", "last-year"
+//
+// Keywords and durations are anchored to time.Now() at call time.
 func parseSince(s string) (int64, error) {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, nil
 	}
 	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return n, nil
 	}
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		return 0, fmt.Errorf("--since: cannot parse %q as integer or RFC3339 timestamp", s)
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.UnixMilli(), nil
 	}
-	return t.UnixMilli(), nil
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t.UnixMilli(), nil
+	}
+	now := time.Now()
+	switch strings.ToLower(s) {
+	case "today":
+		y, m, d := now.Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, now.Location()).UnixMilli(), nil
+	case "yesterday":
+		y, m, d := now.AddDate(0, 0, -1).Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, now.Location()).UnixMilli(), nil
+	case "last-week":
+		return now.AddDate(0, 0, -7).UnixMilli(), nil
+	case "last-month":
+		return now.AddDate(0, -1, 0).UnixMilli(), nil
+	case "last-year":
+		return now.AddDate(-1, 0, 0).UnixMilli(), nil
+	}
+	if d, err := parseDurationExt(s); err == nil {
+		return now.Add(-d).UnixMilli(), nil
+	}
+	return 0, fmt.Errorf("cannot parse %q: want unix ms, RFC3339, YYYY-MM-DD, duration (e.g. 7d, 2h), or keyword (today, yesterday, last-week, last-month, last-year)", s)
+}
+
+// parseDurationExt extends time.ParseDuration with day/week/year units.
+func parseDurationExt(s string) (time.Duration, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	switch s[len(s)-1] {
+	case 'd', 'w', 'y':
+		n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		switch s[len(s)-1] {
+		case 'd':
+			return time.Duration(n) * 24 * time.Hour, nil
+		case 'w':
+			return time.Duration(n) * 7 * 24 * time.Hour, nil
+		case 'y':
+			return time.Duration(n) * 365 * 24 * time.Hour, nil
+		}
+	}
+	return time.ParseDuration(s)
 }
 
 var (
@@ -53,8 +105,9 @@ var workoutsListCmd = &cobra.Command{
 to control the window. If --limit exceeds one page (100), the command
 automatically fetches subsequent pages using the server-returned cursor.`,
 	Example: `  suuntool workouts list --limit 5
-  suuntool workouts list --since 2026-01-01T00:00:00Z --format json
-  suuntool workouts list -o workouts.json`,
+  suuntool workouts list --since 7d
+  suuntool workouts list --since last-month --format json
+  suuntool workouts list --since 2026-01-01 -o workouts.json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if workoutsListLimit > 100 {
 			return fmt.Errorf("--limit must be <= 100 (server maximum per page); got %d", workoutsListLimit)
@@ -715,10 +768,10 @@ var workoutsUncommentCmd = &cobra.Command{
 
 func init() {
 	workoutsListCmd.Flags().IntVar(&workoutsListLimit, "limit", 20, "Number of workouts to fetch (max 100 per server page)")
-	workoutsListCmd.Flags().StringVar(&workoutsListSince, "since", "", "Only fetch workouts after this time (RFC3339 or unix ms)")
+	workoutsListCmd.Flags().StringVar(&workoutsListSince, "since", "", "Only fetch workouts after this time (unix ms, RFC3339, YYYY-MM-DD, duration like 7d/2h, or keyword: today/yesterday/last-week/last-month/last-year)")
 	workoutsListCmd.Flags().IntVar(&workoutsListOffset, "offset", 0, "Page offset for first request")
 
-	workoutsCountCmd.Flags().StringVar(&workoutsCountUntil, "until", "", "Upper bound timestamp (RFC3339 or unix ms; default = now)")
+	workoutsCountCmd.Flags().StringVar(&workoutsCountUntil, "until", "", "Upper bound timestamp (unix ms, RFC3339, YYYY-MM-DD, duration like 7d, or keyword; default = now)")
 	workoutsCountCmd.Flags().IntVar(&workoutsCountSharingFlags, "sharing-flags", 0, "Sharing flags filter (server-required param)")
 
 	workoutsCommentCmd.Flags().BoolVar(&flagCommentStdin, "stdin", false, "Read comment text from stdin (for multi-line or piped input)")

@@ -57,6 +57,7 @@ suuntool profile user alice                         # look up any user by handle
 
 # Workouts
 suuntool workouts list --limit 5                    # most recent 5 workouts
+suuntool workouts list --since 7d                   # last 7 days (also: 12h, 2w, last-week, 2026-01-01)
 suuntool workouts get wk_abc123                     # one workout's metadata
 suuntool workouts stats                             # aggregate stats for you
 suuntool workouts count                             # workout count
@@ -65,8 +66,8 @@ suuntool workouts fit wk_abc123 -o wk.fit           # binary .fit export
 
 # 24/7 wellness (gzipped NDJSON, decoded on the fly)
 suuntool wellness sleep                             # pretty table on TTY, raw NDJSON when piped
-suuntool wellness sleep --since 0 -o sleep.ndjson   # raw NDJSON to file
-suuntool wellness activity   --since 0 | jq '.entryData.stepCount'
+suuntool wellness sleep --since 7d -o sleep.ndjson  # last 7 days (also: 2026-01-01, last-week)
+suuntool wellness activity   --since last-month | jq '.entryData.stepCount'
 suuntool wellness recovery   --out ./wellness
 suuntool wellness sleepstages --out ./wellness
 
