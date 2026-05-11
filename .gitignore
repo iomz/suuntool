@@ -1,0 +1,6 @@
+/suuntool
+/dist/
+*.session.json
+coverage.out
+.idea/
+.vscode/
