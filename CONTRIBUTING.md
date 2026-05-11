@@ -38,3 +38,14 @@ go test ./...
 
 CI must pass without any live API calls. The HTTP-touching tests use `httptest.Server`.
 A manual smoke test against a real account lives at `scripts/smoke.sh` (not yet written).
+
+## Releasing
+
+1. Cut a tag: `git tag -a vX.Y.Z -m "vX.Y.Z — <one-line summary>" && git push origin vX.Y.Z`
+2. Run goreleaser: `GITHUB_TOKEN="$(gh auth token)" goreleaser release --clean`
+3. goreleaser auto-publishes:
+   - 4 prebuilt binary tarballs (darwin/linux × amd64/arm64) to the GitHub release.
+   - A binary-based Homebrew formula committed to `tajchert/homebrew-tap/Formula/suuntool.rb`.
+4. Smoke-test: `brew update && brew upgrade tajchert/tap/suuntool && suuntool version`.
+
+The tap formula is **goreleaser-managed** — do not hand-edit `tajchert/homebrew-tap/Formula/suuntool.rb`. The file header marks itself `DO NOT EDIT`. Pre-release flow (`go install …@latest`, source-build) still works for users who prefer it.
