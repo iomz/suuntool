@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -200,6 +201,20 @@ func Stats(ctx context.Context, c *api.Client, username string) (*WorkoutStats, 
 		return nil, err
 	}
 	return &ws, nil
+}
+
+// FetchSML returns the full /v1/workouts/{key}/sml body as a stream. Despite the
+// path name, the body is application/json (~5MB per workout). Caller MUST Close
+// the reader.
+func FetchSML(ctx context.Context, c *api.Client, key string) (io.ReadCloser, error) {
+	return c.DoStream(ctx, "GET", "workouts/"+key+"/sml", nil, nil)
+}
+
+// FetchFIT returns the binary .fit export from /v1/workout/exportFit/{key}.
+// Note the singular "workout/" prefix per handoff §6.19. application/octet-stream.
+// Caller MUST Close.
+func FetchFIT(ctx context.Context, c *api.Client, key string) (io.ReadCloser, error) {
+	return c.DoStream(ctx, "GET", "workout/exportFit/"+key, nil, nil)
 }
 
 // CountWorkouts hits /v1/workouts/count. Both until and sharingFlags are

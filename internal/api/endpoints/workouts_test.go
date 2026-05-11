@@ -2,6 +2,7 @@ package endpoints_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,6 +89,63 @@ func TestStats_DecodesEnvelope(t *testing.T) {
 	assert.Len(t, ws.AllStats, 2)
 	assert.True(t, strings.Contains(capturedPath, "/workouts/alice/stats"),
 		"request URL should contain /workouts/alice/stats, got: %s", capturedPath)
+}
+
+func TestFetchSML_StreamsBody(t *testing.T) {
+	// 256 bytes of fake JSON-ish payload.
+	fakeBody := make([]byte, 256)
+	for i := range fakeBody {
+		fakeBody[i] = byte(i % 128) // printable-ish bytes, not gzip magic
+	}
+	// Ensure not accidentally gzip magic (0x1f 0x8b).
+	fakeBody[0] = '{'
+	fakeBody[1] = '"'
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/workouts/wk1/sml", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(fakeBody)
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL+"/v1/", "SK", 0)
+	rc, err := endpoints.FetchSML(context.Background(), client, "wk1")
+	require.NoError(t, err)
+	require.NotNil(t, rc)
+	defer rc.Close()
+
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, fakeBody, got, "streamed bytes must be byte-identical to server response")
+}
+
+func TestFetchFIT_UsesSingularWorkoutPath(t *testing.T) {
+	// 32 bytes of fake binary content (not gzip magic).
+	fakeBody := []byte("FIT\x00fake-binary-fit-data-padding-xx")
+	var capturedPath string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(fakeBody)
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL+"/v1/", "SK", 0)
+	rc, err := endpoints.FetchFIT(context.Background(), client, "wk1")
+	require.NoError(t, err)
+	require.NotNil(t, rc)
+	defer rc.Close()
+
+	// The path MUST be singular "workout/" not "workouts/".
+	assert.Equal(t, "/v1/workout/exportFit/wk1", capturedPath,
+		"FIT export must use singular /workout/exportFit/{key} path")
+
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, fakeBody, got, "streamed bytes must be byte-identical to server response")
 }
 
 func TestCountWorkouts_RequiresBothParams(t *testing.T) {

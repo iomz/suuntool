@@ -10,6 +10,7 @@ import (
 
 	"github.com/tajchert/suuntool/internal/api/endpoints"
 	"github.com/tajchert/suuntool/internal/auth"
+	"github.com/tajchert/suuntool/internal/output"
 )
 
 var workoutsCmd = &cobra.Command{
@@ -202,6 +203,72 @@ If no username is provided, the currently logged-in user's stats are returned.`,
 	},
 }
 
+var workoutsSMLCmd = &cobra.Command{
+	Use:   "sml <key>",
+	Short: "Download the full SML data for a workout",
+	Long: `Download the full SML payload for a workout from /v1/workouts/{key}/sml.
+Output is JSON despite the path name. Default writes to stdout; use -o to save to a file.
+
+For large workouts (~5MB) it is strongly recommended to use -o <file> rather than
+piping stdout.`,
+	Args: cobra.ExactArgs(1),
+	Example: `  suuntool workouts sml wk1 -o wk1.sml.json
+  suuntool workouts sml wk1 | jq '.Data.Samples | length'`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+
+		rc, err := endpoints.FetchSML(ctx, c, args[0])
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+
+		// Raw passthrough — sanctioned bypass of emit() per CLAUDE.md / plan P4.
+		// SML responses are ~5MB JSON; rendering through Render would waste memory
+		// and the user almost always wants -o <file>.
+		if flagOutput != "" {
+			return output.WriteRaw(flagOutput, rc)
+		}
+		return output.WriteRawStdout(rc)
+	},
+}
+
+var workoutsFITCmd = &cobra.Command{
+	Use:   "fit <key>",
+	Short: "Download the binary .fit export for a workout",
+	Long: `Download the binary .fit export for a workout from /v1/workout/exportFit/{key}.
+Returns a binary .fit file. Use -o to save; piping to stdout is binary-unsafe on some terminals.`,
+	Args: cobra.ExactArgs(1),
+	Example: `  suuntool workouts fit wk1 -o wk1.fit`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+
+		rc, err := endpoints.FetchFIT(ctx, c, args[0])
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+
+		// Raw passthrough — sanctioned bypass of emit() per CLAUDE.md / plan P4.
+		// SML responses are ~5MB JSON; rendering through Render would waste memory
+		// and the user almost always wants -o <file>.
+		if flagOutput != "" {
+			return output.WriteRaw(flagOutput, rc)
+		}
+		return output.WriteRawStdout(rc)
+	},
+}
+
 func init() {
 	workoutsListCmd.Flags().IntVar(&workoutsListLimit, "limit", 20, "Number of workouts to fetch (max 100 per server page)")
 	workoutsListCmd.Flags().StringVar(&workoutsListSince, "since", "", "Only fetch workouts after this time (RFC3339 or unix ms)")
@@ -210,6 +277,6 @@ func init() {
 	workoutsCountCmd.Flags().StringVar(&workoutsCountUntil, "until", "", "Upper bound timestamp (RFC3339 or unix ms; default = now)")
 	workoutsCountCmd.Flags().IntVar(&workoutsCountSharingFlags, "sharing-flags", 0, "Sharing flags filter (server-required param)")
 
-	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd)
+	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }
