@@ -13,9 +13,12 @@ Reverse-engineering notes (endpoint inventory, signing scheme, Python reference 
 ```
 main.go
 └── cmd/                 Cobra commands. Knows about session+api+output, nothing else.
-    ├── root.go          persistent flags, exit codes, helpers (baseURL, authedClient, emit, pickTimeout)
+    ├── root.go          persistent flags, exit codes, helpers (baseURL, authedClient, emit, pickTimeout, parseSince, useTTYColor)
     ├── login.go logout.go whoami.go profile.go doctor.go endpoints.go version.go
-    └── login_test.go    end-to-end via httptest
+    ├── workouts.go      workouts list/get/count/stats/sml/fit/export/comments/react/edit/upload/delete (+ --summary, --stream, --since)
+    ├── wellness.go      wellness sleep/activity/recovery/sleepstages NDJSON streams
+    ├── wellness_sleep_pretty.go   TTY-only sleep table renderer (writeSleepFooter)
+    └── login_test.go, root_test.go, wellness_sleep_pretty_test.go    end-to-end via httptest
 internal/
 ├── auth/                signing pipeline. Zero net/http imports.
 │   ├── keys.go          embedded APK constants (login parts, TOTP parts, package name, user-agent)
@@ -23,12 +26,16 @@ internal/
 │   ├── totp.go          PBKDF2-HmacSHA1 + RFC 6238 HOTP → GenerateTOTP(salt, offsetMS)
 │   └── signer.go        SignParams(path, []Param) → base64url(SHA-256), RandomSalt, NowMS
 ├── api/                 HTTP transport.
-│   ├── client.go        Client + Do() — injects STTAuthorization + User-Agent, maps HTTP status → typed errors
+│   ├── client.go        Client + Do()/DoStream() — injects STTAuthorization + User-Agent, maps HTTP status → typed errors, transparent gzip
 │   ├── envelope.go      generic AskoResponse[T] + DecodeAsko[T]
 │   ├── errors.go        *Error{Code, Message, Hint, HTTP, Exit} — ExitCode() drives os.Exit
 │   └── endpoints/       per-resource wrappers — add a file here for each new resource
 │       ├── session.go   Login (POST /login2), Logout, RemoteUserSession + Pretty()
-│       └── user.go      Whoami, Settings, Follow, UserByName + Prettier impls
+│       ├── user.go      Whoami, Settings, Follow, UserByName + Prettier impls
+│       ├── workouts.go  List/Get/Count/Stats/SML/FIT/Delete + WorkoutList.Summary / SummaryWithWoW
+│       ├── comments.go reactions.go edit.go share.go extensions.go upload.go   workout writes (x-totp via cmd layer)
+│       ├── wellness.go  NDJSON stream decoders (sleep/activity/recovery/sleepstages)
+│       ├── format.go    formatKm / formatDuration / renderTable(Styled) shared by Pretty()
 ├── session/             session.go — XDG-aware persistence, 0600 perms, ErrNoSession
 └── output/              the single render boundary
     ├── output.go        Render / RenderToFile, Opts, Prettier interface, resolveFormat
@@ -77,6 +84,39 @@ Dependency direction is strict: **cmd → api(/endpoints) → auth**, and **cmd 
 3. Add a row to `endpointTable` in `cmd/endpoints.go` so agents discover it.
 4. Test the endpoint wrapper with `httptest.Server` (mirror `endpoints/session_test.go`).
 5. If the endpoint takes a `x-totp` header (reactions, comments, settings-safe, email/phone change), generate it with `auth.GenerateTOTP(session.Email, session.OffsetMS)` and pass via the `headers` map of `client.Do`.
+
+## Failure modes — what each exit code looks like
+
+All exit codes are set centrally by `internal/api/client.go:Do()` (see lines ~85–103). When triaging a CLI exit, start there.
+
+| Exit | Code | Trigger | Hint shown? | Typical cause |
+|------|------|---------|-------------|---------------|
+| 2 | `USAGE` | bad flag combo, missing required arg, `confirm()` on non-TTY without `--yes` | no | fix the invocation |
+| 3 | `NETWORK` | DNS/TCP/TLS failure, request timeout (`context.DeadlineExceeded`) | no | check connectivity; bump `--timeout`. **Distinct from server errors** — never retry blindly. |
+| 4 | `AUTH_EXPIRED` | HTTP 401 | yes: `Run: suuntool login` | session aged out (~30d) or signing-key drift after Suunto app bump. If `suuntool login` itself returns 4, suspect key rotation — see below. |
+| 5 | `SERVER` | HTTP 5xx **or** any other non-2xx/3xx without a dedicated code | no | Suunto-side. 429 also lands here (no Retry-After parsing yet). Treat as transient. |
+| 6 | `NOT_FOUND` | HTTP 404 | no | wrong workout key, deleted resource, wrong username on `workouts/{username}/stats` |
+| 7 | `FORBIDDEN` | HTTP 403 | no | privacy/sharingFlags mismatch, deleted account, or an x-totp the server refused (clock skew > 30s — re-check `OffsetMS`) |
+
+Endpoints to babysit:
+
+- **`workouts list --stream` / `export --bundle`** — pages forever and pulls SML (~5 MB each). The server rate-limits aggressively here; expect 429 → exit 5 on long backfills. Throttle with `--limit` or split by `--since`.
+- **`workouts/{key}/sml`** and **`workout/exportFit/{key}`** — large bodies, gzip'd, streamed via `DoStream`. Timeouts here are common on slow links; use `--timeout` or `-o file` and re-run.
+- **Anything with `x-totp`** (comments post, react/unreact, settings-safe, email/phone change, workout edit/delete) — server validates the TOTP against its clock. If the laptop clock drifts >30s, every write returns 403 until you re-`login` (refreshes `OffsetMS`).
+- **`/login2`** — does *not* return an AskoResponse envelope. Decoding failures here mean Suunto changed the login response shape, not a normal error.
+
+What a signing-key rotation feels like, in practice: `login` succeeds against your password but every subsequent call returns 401 (exit 4) with a generic body, *even immediately after a fresh login*. Or `login` itself starts returning 401 / 403 with no useful body. That's the canary — confirm by re-running `handoff/reference/secret_check.py` against the current APK; if the goldens have moved, follow the `CONTRIBUTING.md` rotation procedure.
+
+## `--summary` aggregation math (workouts list)
+
+`workouts list --summary` replaces the per-row table with `WorkoutSummary` totals over **whatever pages got fetched in the current invocation**. The math lives in `internal/api/endpoints/workouts.go:Summary()` and `SummaryWithWoW()` — read those before changing behavior. Quick reference so agents don't have to:
+
+- **Scope.** The aggregate covers exactly the items in the `WorkoutList` returned to the cmd layer. With `--since` + pagination, that's every workout whose `startTime ≥ since`. Without `--since`, it's one server page (`--limit`, default 20, max 100). The summary is *not* a server-side rollup — it's a client-side fold over the items the CLI already pulled. If you didn't paginate, the totals only describe one page.
+- **"Active time" = `TotalTime`** (the workout's `totalTime` field, seconds) summed verbatim. There is **no separate moving-vs-paused split** in the wire model — Suunto reports a single `totalTime` per workout and that's what we add. Pretty() renders it via `formatDuration` (h/m/s).
+- **Distance** is meters (`totalDistance`) summed and rendered as km. Ascent/descent are meters, summed as-is.
+- **Multi-activity sessions roll up by `activityId`**, not by session. Each workout has exactly one `activityId` on the wire (the parent/primary activity); sub-activity legs are not separate rows on this endpoint, so there is no double-counting at the list level. `ByActivity[id]` accumulates `Count`, `Distance`, `Duration` for that activity ID; the top-level scalars (`TotalDistance`, `TotalTime`, `TotalAscent`, `TotalDescent`) are the sum across all activities. Sum of `ByActivity[*].Distance == TotalDistance`. Same for duration.
+- **`SummaryWithWoW(nowMS)`** adds a per-activity `WeekOverWeek.Count` delta = (count in `[nowMS-7d, nowMS)`) − (count in `[nowMS-14d, nowMS-7d)`). Buckets use the workout's `startTime`. Items older than 14 days still count toward the totals but contribute 0 to the delta. `nowMS == 0` → `time.Now().UnixMilli()`. The cmd layer passes 0 in production; tests pin it for determinism.
+- **Rendering.** `Pretty()` prints the scalar block (workouts/distance/time/ascent/descent) then a per-activity table via `Table()`. When `WeekOverWeek` is populated, `Table()` appends a `ΔWoW` column (signed; `formatDelta` uses `+N` for positive, `0` for zero). On a TTY, `cmd/workouts.go:ansiDeltaColor` colors that column green/red — JSON output flattens the embedded struct and drops the color flag.
 
 ## Signing-key rotation
 
