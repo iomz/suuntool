@@ -25,6 +25,10 @@ var endpointTable = []endpointRow{
 	{"workouts stats [username]", "GET", "/v1/workouts/{username}/stats", true},
 	{"workouts sml <key>", "GET", "/v1/workouts/{key}/sml", true},
 	{"workouts fit <key>", "GET", "/v1/workout/exportFit/{key}", true},
+	{"wellness sleep", "GET", "https://247.sports-tracker.com/v1/sleep/export", true},
+	{"wellness activity", "GET", "https://247.sports-tracker.com/v1/activity/export", true},
+	{"wellness recovery", "GET", "https://247.sports-tracker.com/v1/recovery/export", true},
+	{"wellness sleepstages", "GET", "https://247.sports-tracker.com/v1/sleepstages/export", true},
 }
 
 var endpointsCmd = &cobra.Command{
