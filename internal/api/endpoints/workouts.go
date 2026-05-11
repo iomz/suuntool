@@ -140,6 +140,68 @@ func (wc WorkoutCount) Pretty() string {
 	return fmt.Sprintf("count:       %d\ntotalCount:  %d", wc.Count, wc.TotalCount)
 }
 
+// PerActivityStats is one row of WorkoutStats.AllStats.
+type PerActivityStats struct {
+	ActivityID int     `json:"activityId"`
+	Count      int     `json:"count"`
+	Distance   float64 `json:"distance"`
+	Duration   float64 `json:"duration"`
+	Energy     float64 `json:"energy"`
+}
+
+// WorkoutStats is the response from /v1/workouts/{username}/stats.
+// Field names follow what Suunto returns; numerics are kept verbatim.
+type WorkoutStats struct {
+	TotalDistanceSum          float64            `json:"totalDistanceSum"`
+	TotalTimeSum              float64            `json:"totalTimeSum"`
+	TotalEnergyConsumptionSum float64            `json:"totalEnergyConsumptionSum"`
+	TotalNumberOfWorkoutsSum  int                `json:"totalNumberOfWorkoutsSum"`
+	TotalDays                 int                `json:"totalDays"`
+	AllStats                  []PerActivityStats `json:"allStats"`
+}
+
+// formatKm formats meters as a km string with two decimal places.
+func formatKm(meters float64) string {
+	return fmt.Sprintf("%.2fkm", meters/1000.0)
+}
+
+// Pretty returns a multi-line summary of the aggregate stats.
+func (s WorkoutStats) Pretty() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "workouts:  %d\n", s.TotalNumberOfWorkoutsSum)
+	fmt.Fprintf(&sb, "distance:  %s\n", formatKm(s.TotalDistanceSum))
+	fmt.Fprintf(&sb, "time:      %s\n", formatDuration(s.TotalTimeSum))
+	fmt.Fprintf(&sb, "energy:    %.0f kcal\n", s.TotalEnergyConsumptionSum)
+	fmt.Fprintf(&sb, "days:      %d\n", s.TotalDays)
+	if len(s.AllStats) > 0 {
+		fmt.Fprintf(&sb, "Per activity:\n")
+		for _, a := range s.AllStats {
+			fmt.Fprintf(&sb, "  %d:  %dx  %s  %s  %.0f kcal\n",
+				a.ActivityID, a.Count,
+				formatKm(a.Distance),
+				formatDuration(a.Duration),
+				a.Energy,
+			)
+		}
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// Stats fetches /v1/workouts/{username}/stats. Empty username is rejected at the
+// caller (cmd layer falls back to the session username).
+func Stats(ctx context.Context, c *api.Client, username string) (*WorkoutStats, error) {
+	path := fmt.Sprintf("workouts/%s/stats", username)
+	body, err := c.Do(ctx, "GET", path, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	ws, err := api.DecodeAsko[WorkoutStats](body)
+	if err != nil {
+		return nil, err
+	}
+	return &ws, nil
+}
+
 // CountWorkouts hits /v1/workouts/count. Both until and sharingFlags are
 // required by the server (handoff §5 quirks). If untilMS <= 0, the caller
 // should pass auth.NowMS().

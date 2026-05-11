@@ -172,6 +172,36 @@ timestamp or unix milliseconds; omitting it uses the current time.`,
 	},
 }
 
+var workoutsStatsCmd = &cobra.Command{
+	Use:   "stats [username]",
+	Short: "Fetch aggregate workout stats for a user",
+	Long: `Fetch aggregate workout statistics from the server for a given user.
+If no username is provided, the currently logged-in user's stats are returned.`,
+	Args: cobra.MaximumNArgs(1),
+	Example: `  suuntool workouts stats
+  suuntool workouts stats alice
+  suuntool workouts stats --format json`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, s, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+
+		username := s.Username
+		if len(args) == 1 {
+			username = args[0]
+		}
+
+		ws, err := endpoints.Stats(ctx, c, username)
+		if err != nil {
+			return err
+		}
+		return emit(ws)
+	},
+}
+
 func init() {
 	workoutsListCmd.Flags().IntVar(&workoutsListLimit, "limit", 20, "Number of workouts to fetch (max 100 per server page)")
 	workoutsListCmd.Flags().StringVar(&workoutsListSince, "since", "", "Only fetch workouts after this time (RFC3339 or unix ms)")
@@ -180,6 +210,6 @@ func init() {
 	workoutsCountCmd.Flags().StringVar(&workoutsCountUntil, "until", "", "Upper bound timestamp (RFC3339 or unix ms; default = now)")
 	workoutsCountCmd.Flags().IntVar(&workoutsCountSharingFlags, "sharing-flags", 0, "Sharing flags filter (server-required param)")
 
-	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd)
+	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }

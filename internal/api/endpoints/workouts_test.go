@@ -60,6 +60,36 @@ func TestGetWorkout_ParsesSingle(t *testing.T) {
 	assert.InDelta(t, 5000.0, w.TotalDistance, 0.001)
 }
 
+func TestStats_DecodesEnvelope(t *testing.T) {
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"error":null,"payload":{
+			"totalDistanceSum":100000.0,
+			"totalTimeSum":36000.0,
+			"totalEnergyConsumptionSum":50000.0,
+			"totalNumberOfWorkoutsSum":42,
+			"totalDays":10,
+			"allStats":[
+				{"activityId":1,"count":20,"distance":50000.0,"duration":18000.0,"energy":25000.0},
+				{"activityId":3,"count":22,"distance":50000.0,"duration":18000.0,"energy":25000.0}
+			]
+		}}`))
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL+"/v1/", "SK", 0)
+	ws, err := endpoints.Stats(context.Background(), client, "alice")
+	require.NoError(t, err)
+	require.NotNil(t, ws)
+	assert.Equal(t, 42, ws.TotalNumberOfWorkoutsSum)
+	assert.Len(t, ws.AllStats, 2)
+	assert.True(t, strings.Contains(capturedPath, "/workouts/alice/stats"),
+		"request URL should contain /workouts/alice/stats, got: %s", capturedPath)
+}
+
 func TestCountWorkouts_RequiresBothParams(t *testing.T) {
 	var capturedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

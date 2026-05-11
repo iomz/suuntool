@@ -22,6 +22,7 @@ var endpointTable = []endpointRow{
 	{"workouts list", "GET", "/v1/workouts", true},
 	{"workouts get <key>", "GET", "/v1/workouts/{key}", true},
 	{"workouts count", "GET", "/v1/workouts/count", true},
+	{"workouts stats [username]", "GET", "/v1/workouts/{username}/stats", true},
 }
 
 var endpointsCmd = &cobra.Command{
