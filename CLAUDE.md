@@ -56,6 +56,9 @@ Dependency direction is strict: **cmd → api(/endpoints) → auth**, and **cmd 
 - **Don't add a feature-flag layer or "future-proof" abstraction "just in case".** Add the file when you add the endpoint.
 - **Don't widen `internal/auth`'s public surface** without good reason. Helpers like `keyObfuscator`, `utf8Replace`, `pbkdf2KeyForSalt`, `hotp6` are unexported on purpose — promoting them invites parallel implementations.
 - **Don't paper over a 401.** Surface it as `*api.Error{Code:"AUTH_EXPIRED", Exit:4}` with `Hint:"Run: suuntool login"`. No silent re-auth.
+- **Don't run write-side smoke tests in CI.** Anything that touches `POST`/`PUT`/`DELETE` on Suunto's real backend must be exercised manually against a personal account (round-trip: do → verify → undo) and never from automation. CI runs `httptest`-backed unit tests only.
+- **Don't compute x-totp inside endpoint wrappers.** The wrappers in `internal/api/endpoints/` stay session-agnostic; the cmd layer calls `totpHeaders(sess)` and passes the header in. Same rule for any header derived from session state.
+- **Don't bypass `confirm()` on destructive commands.** `workouts delete` requires `--yes` on non-TTY. New destructive commands (future bulk-deletes, etc.) must follow the same pattern. The helper returns `*api.Error{Code:"USAGE", Exit:2}` when stdin is not a TTY and `--yes` is unset — propagate, don't catch.
 
 ## Key code to read first (in this order)
 

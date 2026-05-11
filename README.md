@@ -69,6 +69,16 @@ suuntool wellness activity   --since 0 | jq '.entryData.stepCount'
 suuntool wellness recovery   --out ./wellness
 suuntool wellness sleepstages --out ./wellness
 
+# Workout interactions
+suuntool workouts comments wk_abc123                # list comments
+suuntool workouts comment wk_abc123 "great run"     # post a comment (x-totp)
+suuntool workouts react wk_abc123                   # like (x-totp)
+suuntool workouts edit wk_abc123 --set totalAscent=120
+suuntool workouts share wk_abc123 --as gpx-track    # signed GPX URL
+suuntool workouts extensions wk_abc123              # Fitness/Intensity/…
+suuntool workouts upload --sml ./wk.sml             # multipart upload
+suuntool workouts delete wk_abc123 --yes            # destructive — needs --yes off-TTY
+
 # Other reads
 suuntool partner-connections                        # Strava/TrainingPeaks/… links
 suuntool gear list                                  # paired gear
@@ -136,6 +146,30 @@ NO_COLOR=1 suuntool whoami                          # plain-text TTY
 | `wellness activity` | `GET 247.../v1/activity/export` | yes | Per-15-min `hr`/`steps`/`energy`. **`hr` is in Hz** — ×60 for BPM |
 | `wellness recovery` | `GET 247.../v1/recovery/export` | yes | `balance` ∈ 0..1 = "wake-up resources" |
 | `wellness sleepstages` | `GET 247.../v1/sleepstages/export` | yes | Stage timeline (light/deep/REM/…) |
+
+### Workout interactions & writes ⚠️
+
+These mutate server state. The `delete` command requires `--yes` in non-TTY contexts.
+
+| Command | Endpoint | Auth | Notes |
+|---------|----------|------|-------|
+| `workouts comments <key>` | `GET /v1/workouts/comments/{key}` | yes | List comments on a workout (note plural `comments/`) |
+| `workouts comment <key> [text]` | `POST /v1/workouts/comment/{key}` | yes + **x-totp** | Post a comment; `--stdin` for multi-line |
+| `workouts uncomment <comment-key>` | `DELETE /v1/workouts/comment/{commentKey}` | yes | Delete a comment by comment-key (NOT workout-key) |
+| `workouts react <key>` | `POST /v1/workouts/reaction/{key}` | yes + **x-totp** | `--reaction like` (only supported value) |
+| `workouts unreact <key>` | `DELETE /v1/workouts/reaction/{key}` | yes | Remove your reaction |
+| `workouts edit <key> --set field=<json>` | `PUT /v1/workouts/{key}/attributes` | yes | Partial attribute update; values parsed as JSON literals |
+| `workouts batch-update --file <json>` | `POST /v1/workouts/batchUpdate` | yes | Bulk updates from a JSON array |
+| `workouts share <key> --as gpx-route\|gpx-track` | `PUT /v1/workouts/{user}/{key}/share/{format}` | yes | Returns a signed GPX URL |
+| `workouts extensions <key>` | `POST /v1/workout/extensions/{key}` | yes | Despite POST, this is a fetch — body is the filter list |
+| `workouts upload --sml <path> [--extensions <path>]` | `POST /v1/workout` (multipart) | yes | Upload a pre-built SML file. Streams via `io.Pipe`. **Does NOT generate SML from raw GPS** |
+| `workouts delete <key>` | `DELETE /v1/workouts/{key}/delete` | yes | **Destructive.** TTY confirmation prompt; pass `--yes` in scripts/agents |
+
+> **`x-totp` writes.** `comment` and `react` require a fresh 6-digit TOTP. `suuntool` auto-derives one from your session — you don't need to do anything. Codes rotate every 30s, so commands generate per call.
+>
+> **`--yes` and destructive operations.** `workouts delete` refuses to run on a non-TTY without `--yes` (exit code 2). This prevents agents and CI scripts from accidentally bypassing the confirmation by piping nothing into stdin.
+>
+> **Rate limiting.** Suunto's quotas are conservative (a few QPS). Don't batch-spam comments or reactions — your account can be flagged.
 
 ### Other reads
 
