@@ -18,8 +18,15 @@ import (
 
 // startTestServer builds an MCP server with deps pointing at the given
 // Suunto-compatible httptest URL and (optional) session, then connects an
-// in-memory client and returns the client session.
+// in-memory client and returns the client session. Write+destructive tools
+// are registered by default; use startTestServerGated to control tiering.
 func startTestServer(t *testing.T, baseURL string, timelineURL string, sess *session.Session) *sdkmcp.ClientSession {
+	return startTestServerGated(t, baseURL, timelineURL, sess, true, true)
+}
+
+// startTestServerGated is like startTestServer but lets the caller decide
+// which tool tiers to expose. Used by the destructive-gating test.
+func startTestServerGated(t *testing.T, baseURL string, timelineURL string, sess *session.Session, allowWrite, allowDestructive bool) *sdkmcp.ClientSession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -38,7 +45,7 @@ func startTestServer(t *testing.T, baseURL string, timelineURL string, sess *ses
 	d := &deps{client: cl, timelineClient: tl, session: sess}
 
 	srv := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "suuntool", Version: "0"}, nil)
-	registerAll(srv, d, true, true)
+	registerAll(srv, d, allowWrite, allowDestructive)
 
 	clientT, serverT := sdkmcp.NewInMemoryTransports()
 	errCh := make(chan error, 1)
