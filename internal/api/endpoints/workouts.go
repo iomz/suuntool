@@ -47,15 +47,6 @@ func (w RemoteSyncedWorkout) Pretty() string {
 	return fmt.Sprintf("%s  %s  act=%d  %.2fkm  %s", w.Key, start, w.ActivityID, km, dur)
 }
 
-// formatDuration formats seconds as h:mm:ss.
-func formatDuration(secs float64) string {
-	total := int(secs)
-	h := total / 3600
-	m := (total % 3600) / 60
-	s := total % 60
-	return fmt.Sprintf("%d:%02d:%02d", h, m, s)
-}
-
 // WorkoutList wraps a page of workouts with the cursor metadata so JSON
 // consumers see the pagination state.
 type WorkoutList struct {
@@ -159,11 +150,6 @@ type WorkoutStats struct {
 	TotalNumberOfWorkoutsSum  int                `json:"totalNumberOfWorkoutsSum"`
 	TotalDays                 int                `json:"totalDays"`
 	AllStats                  []PerActivityStats `json:"allStats"`
-}
-
-// formatKm formats meters as a km string with two decimal places.
-func formatKm(meters float64) string {
-	return fmt.Sprintf("%.2fkm", meters/1000.0)
 }
 
 // Pretty returns a multi-line summary of the aggregate stats.

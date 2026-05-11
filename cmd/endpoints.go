@@ -29,6 +29,9 @@ var endpointTable = []endpointRow{
 	{"wellness activity", "GET", "https://247.sports-tracker.com/v1/activity/export", true},
 	{"wellness recovery", "GET", "https://247.sports-tracker.com/v1/recovery/export", true},
 	{"wellness sleepstages", "GET", "https://247.sports-tracker.com/v1/sleepstages/export", true},
+	{"partner-connections", "GET", "/v1/partnerconnection", true},
+	{"gear list", "GET", "/v1/gear", true},
+	{"maps library", "GET", "/v1/maps/library", true},
 }
 
 var endpointsCmd = &cobra.Command{
