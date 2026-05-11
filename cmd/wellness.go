@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -33,7 +34,7 @@ Unit quirks (pass-through, NOT normalized — see handoff §5):
 }
 
 func newWellnessStreamCmd(stream endpoints.WellnessStream) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   string(stream),
 		Short: "Export " + string(stream) + " entries as NDJSON",
 		Example: "  suuntool wellness " + string(stream) + " > " + string(stream) + ".ndjson\n" +
@@ -52,12 +53,39 @@ func newWellnessStreamCmd(stream endpoints.WellnessStream) *cobra.Command {
 				return err
 			}
 			defer body.Close()
+			// Sleep gets a pretty-table mode on TTY / --format=pretty.
+			// Other streams remain raw NDJSON for now (different shapes; row-wise
+			// rendering not yet meaningful).
+			if stream == endpoints.StreamSleep && shouldPrettySleep() {
+				return renderSleepPretty(os.Stdout, body)
+			}
 			return writeWellness(string(stream), body)
 		},
 	}
+	return cmd
 }
 
-// writeWellness picks the right sink:
+// shouldPrettySleep returns true when the sleep command should emit a
+// human-readable table instead of raw NDJSON. Pretty wins when:
+//   - --format=pretty is explicit, OR
+//   - --format=auto (default) and stdout is a TTY AND no file sink is set.
+//
+// Any file sink (--out, -o) forces raw NDJSON to preserve fidelity.
+func shouldPrettySleep() bool {
+	if flagWellnessOutDir != "" || flagOutput != "" {
+		return false
+	}
+	switch flagFormat {
+	case "pretty":
+		return true
+	case "json":
+		return false
+	default: // "auto" or empty
+		return output.IsStdoutTTY()
+	}
+}
+
+// writeWellness picks the right sink for raw NDJSON output:
 //   - --out <dir>: write to <dir>/<stream>.ndjson
 //   - --output / -o <path>: write to that path
 //   - else: stdout
