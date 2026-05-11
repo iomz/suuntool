@@ -41,9 +41,10 @@ func parseSince(s string) (int64, error) {
 }
 
 var (
-	workoutsListLimit  int
-	workoutsListSince  string
-	workoutsListOffset int
+	workoutsListLimit   int
+	workoutsListSince   string
+	workoutsListOffset  int
+	workoutsListSummary bool
 )
 
 var workoutsListCmd = &cobra.Command{
@@ -51,9 +52,15 @@ var workoutsListCmd = &cobra.Command{
 	Short: "List your workouts (paginated)",
 	Long: `List your synced workouts. Results are paginated; use --limit and --since
 to control the window. If --limit exceeds one page (100), the command
-automatically fetches subsequent pages using the server-returned cursor.`,
+automatically fetches subsequent pages using the server-returned cursor.
+
+Pretty output always ends with a totals line (count, distance, time). Pass
+--summary to replace the per-workout rows with an aggregate (count, distance,
+time, ascent, descent, plus a per-activity breakdown). In JSON mode --summary
+emits the summary object instead of the items array.`,
 	Example: `  suuntool workouts list --limit 5
   suuntool workouts list --since 2026-01-01T00:00:00Z --format json
+  suuntool workouts list --limit 100 --summary
   suuntool workouts list -o workouts.json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if workoutsListLimit > 100 {
@@ -114,7 +121,12 @@ automatically fetches subsequent pages using the server-returned cursor.`,
 			offset = 0
 		}
 
-		return emit(&endpoints.WorkoutList{Items: all, Until: lastUntil})
+		list := &endpoints.WorkoutList{Items: all, Until: lastUntil}
+		if workoutsListSummary {
+			s := list.Summary()
+			return emit(&s)
+		}
+		return emit(list)
 	},
 }
 
@@ -717,6 +729,7 @@ func init() {
 	workoutsListCmd.Flags().IntVar(&workoutsListLimit, "limit", 20, "Number of workouts to fetch (max 100 per server page)")
 	workoutsListCmd.Flags().StringVar(&workoutsListSince, "since", "", "Only fetch workouts after this time (RFC3339 or unix ms)")
 	workoutsListCmd.Flags().IntVar(&workoutsListOffset, "offset", 0, "Page offset for first request")
+	workoutsListCmd.Flags().BoolVar(&workoutsListSummary, "summary", false, "Aggregate the fetched workouts into totals (distance/time/ascent + per-activity) instead of listing items")
 
 	workoutsCountCmd.Flags().StringVar(&workoutsCountUntil, "until", "", "Upper bound timestamp (RFC3339 or unix ms; default = now)")
 	workoutsCountCmd.Flags().IntVar(&workoutsCountSharingFlags, "sharing-flags", 0, "Sharing flags filter (server-required param)")

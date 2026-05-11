@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,14 +55,73 @@ type WorkoutList struct {
 	Until int64                 `json:"until"` // metadata.until from the envelope
 }
 
-// Pretty returns one line per workout and a footer with the total count.
+// WorkoutSummary is an aggregate over a set of workouts. Distance is meters
+// and time is seconds (matching the wire types); Pretty() formats them.
+type WorkoutSummary struct {
+	Count         int                      `json:"count"`
+	TotalDistance float64                  `json:"totalDistance"` // meters
+	TotalTime     float64                  `json:"totalTime"`     // seconds
+	TotalAscent   float64                  `json:"totalAscent"`
+	TotalDescent  float64                  `json:"totalDescent"`
+	ByActivity    map[int]PerActivityStats `json:"byActivity,omitempty"`
+}
+
+// Summary computes aggregate totals over the items in the list.
+func (l WorkoutList) Summary() WorkoutSummary {
+	s := WorkoutSummary{Count: len(l.Items), ByActivity: map[int]PerActivityStats{}}
+	for _, w := range l.Items {
+		s.TotalDistance += w.TotalDistance
+		s.TotalTime += w.TotalTime
+		s.TotalAscent += w.TotalAscent
+		s.TotalDescent += w.TotalDescent
+		a := s.ByActivity[w.ActivityID]
+		a.ActivityID = w.ActivityID
+		a.Count++
+		a.Distance += w.TotalDistance
+		a.Duration += w.TotalTime
+		s.ByActivity[w.ActivityID] = a
+	}
+	if len(s.ByActivity) == 0 {
+		s.ByActivity = nil
+	}
+	return s
+}
+
+// Pretty returns a multi-line summary of the aggregate.
+func (s WorkoutSummary) Pretty() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "workouts:  %d\n", s.Count)
+	fmt.Fprintf(&sb, "distance:  %s\n", formatKm(s.TotalDistance))
+	fmt.Fprintf(&sb, "time:      %s\n", formatDuration(s.TotalTime))
+	fmt.Fprintf(&sb, "ascent:    %.0f m\n", s.TotalAscent)
+	fmt.Fprintf(&sb, "descent:   %.0f m", s.TotalDescent)
+	if len(s.ByActivity) > 0 {
+		ids := make([]int, 0, len(s.ByActivity))
+		for id := range s.ByActivity {
+			ids = append(ids, id)
+		}
+		sort.Ints(ids)
+		sb.WriteString("\nPer activity:")
+		for _, id := range ids {
+			a := s.ByActivity[id]
+			fmt.Fprintf(&sb, "\n  %d:  %dx  %s  %s",
+				a.ActivityID, a.Count, formatKm(a.Distance), formatDuration(a.Duration))
+		}
+	}
+	return sb.String()
+}
+
+// Pretty returns one line per workout and a footer with aggregate totals
+// (count, distance, time) so the human render is self-summarizing.
 func (l WorkoutList) Pretty() string {
 	var sb strings.Builder
 	for _, w := range l.Items {
 		sb.WriteString(w.Pretty())
 		sb.WriteByte('\n')
 	}
-	fmt.Fprintf(&sb, "%d workouts", len(l.Items))
+	s := l.Summary()
+	fmt.Fprintf(&sb, "%d workouts  %s  %s",
+		s.Count, formatKm(s.TotalDistance), formatDuration(s.TotalTime))
 	return sb.String()
 }
 
