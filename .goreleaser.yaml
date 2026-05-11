@@ -37,6 +37,18 @@ archives:
       - LICENSE
       - CONTRIBUTING.md
 
+brews:
+  - name: suuntool
+    homepage: "https://github.com/tajchert/suuntool"
+    description: "Unofficial CLI for the Suunto / Sports-Tracker API"
+    license: "MIT"
+    repository:
+      owner: tajchert
+      name: homebrew-tap
+    directory: Formula
+    test: |
+      assert_match "suuntool", shell_output("#{bin}/suuntool version")
+
 checksum:
   name_template: checksums.txt
 
