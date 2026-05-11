@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -753,6 +754,212 @@ Server endpoint: DELETE /v1/workouts/{key}/delete  (note trailing /delete).`,
   suuntool workouts delete wk_abc123 --yes    # non-interactive (scripts/agents)`,
 }
 
+// workouts export <key> --bundle <dir>
+var (
+	flagExportBundle   string
+	flagExportNoFIT    bool
+	flagExportNoSML    bool
+	flagExportNoExt    bool
+	flagExportNoCmts   bool
+	flagExportOverride bool
+)
+
+// exportSummary is the on-stdout/JSON result of `workouts export`. The Pretty
+// form is a multi-line "wrote X" report; JSON shows the same paths so scripts
+// can pick parts out.
+type exportSummary struct {
+	Key      string            `json:"key"`
+	Bundle   string            `json:"bundle"`
+	Files    map[string]string `json:"files"`            // logical name -> absolute path
+	Skipped  []string          `json:"skipped,omitempty"`
+	Failures map[string]string `json:"failures,omitempty"` // logical name -> error string
+}
+
+func (s exportSummary) Pretty() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Exported workout %s to %s\n", s.Key, s.Bundle)
+	order := []string{"metadata", "sml", "fit", "extensions", "comments"}
+	for _, name := range order {
+		if p, ok := s.Files[name]; ok {
+			fmt.Fprintf(&sb, "  %-10s %s\n", name, p)
+		}
+	}
+	for _, name := range s.Skipped {
+		fmt.Fprintf(&sb, "  %-10s (skipped)\n", name)
+	}
+	for name, msg := range s.Failures {
+		fmt.Fprintf(&sb, "  %-10s FAILED: %s\n", name, msg)
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+var workoutsExportCmd = &cobra.Command{
+	Use:   "export <key>",
+	Short: "Bundle metadata + SML + FIT + extensions + comments for a workout",
+	Long: `Fetch every per-workout artifact in one call and write the results into
+a directory (--bundle). Produces:
+
+  workout.json       metadata (GetWorkout)
+  workout.sml.json   raw SML payload (~5MB)
+  workout.fit        binary .fit export
+  extensions.json    workout extensions (default set)
+  comments.json      comments list
+
+Use the --no-* flags to skip parts you don't need. Each artifact is fetched
+sequentially; a non-fatal fetch error (e.g. no FIT for this workout) is
+recorded under "failures" in the summary and the remaining parts still run.
+
+The bundle directory is created if missing. By default the command refuses
+to write into a non-empty directory — pass --force to overwrite.`,
+	Args: cobra.ExactArgs(1),
+	Example: `  suuntool workouts export wk_abc123 --bundle ./wk_abc123
+  suuntool workouts export wk_abc123 --bundle ./out --no-fit --force`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		key := args[0]
+		if flagExportBundle == "" {
+			return &api.Error{Code: "USAGE", Message: "--bundle <dir> required", Exit: ExitUsage}
+		}
+
+		dir := flagExportBundle
+		if info, err := os.Stat(dir); err == nil {
+			if !info.IsDir() {
+				return &api.Error{Code: "USAGE", Message: dir + " exists and is not a directory", Exit: ExitUsage}
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				return err
+			}
+			if len(entries) > 0 && !flagExportOverride {
+				return &api.Error{Code: "USAGE", Message: "bundle directory not empty: " + dir, Hint: "Pass --force to overwrite", Exit: ExitUsage}
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+
+		summary := exportSummary{
+			Key:      key,
+			Bundle:   dir,
+			Files:    map[string]string{},
+			Failures: map[string]string{},
+		}
+
+		logf := func(format string, a ...any) {
+			if !flagQuiet {
+				fmt.Fprintf(os.Stderr, format, a...)
+			}
+		}
+
+		// metadata — always fetched, fatal if it fails (likely 404).
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		w, err := endpoints.GetWorkout(ctx, c, key)
+		cancel()
+		if err != nil {
+			return err
+		}
+		metaPath := filepath.Join(dir, "workout.json")
+		if err := output.RenderToFile(metaPath, w, output.Opts{Format: "json"}); err != nil {
+			return err
+		}
+		summary.Files["metadata"] = metaPath
+		logf("  metadata   %s\n", metaPath)
+
+		// SML
+		if flagExportNoSML {
+			summary.Skipped = append(summary.Skipped, "sml")
+		} else {
+			path := filepath.Join(dir, "workout.sml.json")
+			if err := streamToFile(cmd.Context(), path, func(ctx context.Context) (io.ReadCloser, error) {
+				return endpoints.FetchSML(ctx, c, key)
+			}); err != nil {
+				summary.Failures["sml"] = err.Error()
+				logf("  sml        FAILED: %s\n", err)
+			} else {
+				summary.Files["sml"] = path
+				logf("  sml        %s\n", path)
+			}
+		}
+
+		// FIT
+		if flagExportNoFIT {
+			summary.Skipped = append(summary.Skipped, "fit")
+		} else {
+			path := filepath.Join(dir, "workout.fit")
+			if err := streamToFile(cmd.Context(), path, func(ctx context.Context) (io.ReadCloser, error) {
+				return endpoints.FetchFIT(ctx, c, key)
+			}); err != nil {
+				summary.Failures["fit"] = err.Error()
+				logf("  fit        FAILED: %s\n", err)
+			} else {
+				summary.Files["fit"] = path
+				logf("  fit        %s\n", path)
+			}
+		}
+
+		// Extensions
+		if flagExportNoExt {
+			summary.Skipped = append(summary.Skipped, "extensions")
+		} else {
+			ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+			ext, err := endpoints.FetchExtensions(ctx, c, key, nil)
+			cancel()
+			if err != nil {
+				summary.Failures["extensions"] = err.Error()
+				logf("  extensions FAILED: %s\n", err)
+			} else {
+				path := filepath.Join(dir, "extensions.json")
+				if err := output.RenderToFile(path, ext, output.Opts{Format: "json"}); err != nil {
+					return err
+				}
+				summary.Files["extensions"] = path
+				logf("  extensions %s\n", path)
+			}
+		}
+
+		// Comments
+		if flagExportNoCmts {
+			summary.Skipped = append(summary.Skipped, "comments")
+		} else {
+			ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+			cmts, err := endpoints.ListComments(ctx, c, key)
+			cancel()
+			if err != nil {
+				summary.Failures["comments"] = err.Error()
+				logf("  comments   FAILED: %s\n", err)
+			} else {
+				path := filepath.Join(dir, "comments.json")
+				if err := output.RenderToFile(path, cmts, output.Opts{Format: "json"}); err != nil {
+					return err
+				}
+				summary.Files["comments"] = path
+				logf("  comments   %s\n", path)
+			}
+		}
+
+		return emit(summary)
+	},
+}
+
+// streamToFile fetches a stream via fetch and writes it to path. Closes the
+// reader and propagates any error from either step.
+func streamToFile(parent context.Context, path string, fetch func(ctx context.Context) (io.ReadCloser, error)) error {
+	ctx, cancel := context.WithTimeout(parent, pickTimeout())
+	defer cancel()
+	rc, err := fetch(ctx)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	return output.WriteRaw(path, rc)
+}
+
 // workouts uncomment <comment-key>
 var workoutsUncommentCmd = &cobra.Command{
 	Use:   "uncomment <comment-key>",
@@ -805,11 +1012,19 @@ func init() {
 
 	workoutsDeleteCmd.Flags().BoolVar(&flagDeleteYes, "yes", false, "Skip the confirmation prompt (required for non-TTY)")
 
+	workoutsExportCmd.Flags().StringVar(&flagExportBundle, "bundle", "", "Directory to write bundle into (required)")
+	workoutsExportCmd.Flags().BoolVar(&flagExportNoSML, "no-sml", false, "Skip workout.sml.json")
+	workoutsExportCmd.Flags().BoolVar(&flagExportNoFIT, "no-fit", false, "Skip workout.fit")
+	workoutsExportCmd.Flags().BoolVar(&flagExportNoExt, "no-extensions", false, "Skip extensions.json")
+	workoutsExportCmd.Flags().BoolVar(&flagExportNoCmts, "no-comments", false, "Skip comments.json")
+	workoutsExportCmd.Flags().BoolVar(&flagExportOverride, "force", false, "Overwrite a non-empty bundle directory")
+	_ = workoutsExportCmd.MarkFlagRequired("bundle")
+
 	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd,
 		workoutsCommentsCmd, workoutsCommentCmd, workoutsUncommentCmd,
 		workoutsReactCmd, workoutsUnreactCmd,
 		workoutsEditCmd, workoutsBatchUpdateCmd,
 		workoutsShareCmd, workoutsExtensionsCmd,
-		workoutsUploadCmd, workoutsDeleteCmd)
+		workoutsUploadCmd, workoutsDeleteCmd, workoutsExportCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }
