@@ -19,8 +19,9 @@ const (
 // deps holds runtime dependencies tool handlers close over.
 // Populated by Run() in server.go.
 type deps struct {
-	client  *api.Client
-	session *session.Session
+	client         *api.Client
+	timelineClient *api.Client
+	session        *session.Session
 }
 
 // toolRegistrar registers one MCP tool on the given server, closing over d.

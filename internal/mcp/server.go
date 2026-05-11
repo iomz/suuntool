@@ -36,26 +36,33 @@ func Run(ctx context.Context, o Opts) error {
 		sessionKey = sess.SessionKey
 	}
 	cl := api.NewClient(o.BaseURL, sessionKey, timeout)
-	d := &deps{client: cl, session: sess}
+	tl := api.NewTimelineClient(sessionKey, timeout)
+	d := &deps{client: cl, timelineClient: tl, session: sess}
 
 	s := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "suuntool", Version: "0"}, nil)
-	for _, r := range readRegistrars() {
-		r(s, d)
-	}
-	if o.AllowWrite {
-		for _, r := range writeRegistrars() {
-			r(s, d)
-		}
-	}
-	if o.AllowWrite && o.AllowDestructive {
-		for _, r := range destructiveRegistrars() {
-			r(s, d)
-		}
-	}
+	registerAll(s, d, o.AllowWrite, o.AllowDestructive)
 
 	t := o.Transport
 	if t == nil {
 		t = &sdkmcp.StdioTransport{}
 	}
 	return s.Run(ctx, t)
+}
+
+// registerAll wires the tier-gated registrars onto s. Exposed (unexported) so
+// tests can build a server with deps they fully control.
+func registerAll(s *sdkmcp.Server, d *deps, allowWrite, allowDestructive bool) {
+	for _, r := range readRegistrars() {
+		r(s, d)
+	}
+	if allowWrite {
+		for _, r := range writeRegistrars() {
+			r(s, d)
+		}
+	}
+	if allowWrite && allowDestructive {
+		for _, r := range destructiveRegistrars() {
+			r(s, d)
+		}
+	}
 }
