@@ -1,8 +1,10 @@
 package mcp
 
 import (
-	"context"
-	"errors"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/tajchert/suuntool/internal/api"
+	"github.com/tajchert/suuntool/internal/session"
 )
 
 // tier is the gating bucket for a tool.
@@ -14,32 +16,14 @@ const (
 	tierDestructive
 )
 
-// deps holds runtime dependencies handler functions need. Populated by
-// Run() in server.go (Task 4). Declared here so registry.go can compile
-// independently.
-type deps struct{}
-
-// toolHandler is the signature every MCP tool handler implements.
-type toolHandler func(ctx context.Context, d *deps, rawArgs []byte) (any, error)
-
-// toolDef is the registry entry for a single MCP tool.
-type toolDef struct {
-	Name        string
-	Description string
-	Tier        tier
-	InputSchema map[string]any
-	Handler     toolHandler
+// deps holds runtime dependencies tool handlers close over.
+// Populated by Run() in server.go.
+type deps struct {
+	client  *api.Client
+	session *session.Session
 }
 
-func (t toolDef) validate() error {
-	if t.Name == "" {
-		return errors.New("toolDef: missing Name")
-	}
-	if t.Description == "" {
-		return errors.New("toolDef: missing Description")
-	}
-	if t.Handler == nil {
-		return errors.New("toolDef: missing Handler")
-	}
-	return nil
-}
+// toolRegistrar registers one MCP tool on the given server, closing over d.
+// Each tool has its own typed args struct, so registrars are not uniform —
+// they wrap mcp.AddTool internally.
+type toolRegistrar func(s *sdkmcp.Server, d *deps)

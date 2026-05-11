@@ -3,6 +3,8 @@ package mcp
 import (
 	"errors"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/tajchert/suuntool/internal/api"
 )
 
@@ -35,5 +37,16 @@ func mapError(err error) *toolResult {
 		IsError:           true,
 		TextContent:       err.Error(),
 		StructuredContent: map[string]any{"code": "UNKNOWN", "message": err.Error()},
+	}
+}
+
+// mapErrorToCallToolResult adapts the SDK-agnostic toolResult into the SDK's
+// CallToolResult so handlers can return it directly.
+func mapErrorToCallToolResult(err error) *sdkmcp.CallToolResult {
+	r := mapError(err)
+	return &sdkmcp.CallToolResult{
+		IsError:           r.IsError,
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: r.TextContent}},
+		StructuredContent: r.StructuredContent,
 	}
 }

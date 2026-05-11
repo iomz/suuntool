@@ -27,3 +27,17 @@ func TestMapError_Plain(t *testing.T) {
 		t.Fatalf("expected code UNKNOWN, got %v", res.StructuredContent["code"])
 	}
 }
+
+func TestMapErrorToCallToolResult(t *testing.T) {
+	e := &api.Error{Code: "AUTH_EXPIRED", Message: "x"}
+	res := mapErrorToCallToolResult(e)
+	if !res.IsError {
+		t.Fatal("expected IsError")
+	}
+	if len(res.Content) == 0 {
+		t.Fatal("expected Content to be populated")
+	}
+	if res.StructuredContent == nil {
+		t.Fatal("expected StructuredContent to be populated")
+	}
+}
