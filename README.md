@@ -10,12 +10,12 @@ Password:
 Logged in as alice (you@example.com). Session saved to ~/.config/suuntool/session.json.
 
 $ suuntool workouts list --limit 5
-Date              Act  Distance  Duration  Ascent  Key
-2026-05-11 07:42  1    8.42 km   0:44:18   62 m    wk_abc123
-2026-05-10 18:05  3    32.10 km  1:12:04   210 m   wk_abc124
-2026-05-09 06:30  11   5.80 km   1:05:00   140 m   wk_abc125
-2026-05-08 07:10  1    10.05 km  0:52:30   78 m    wk_abc126
-2026-05-07 19:20  6    1.20 km   0:28:11   0 m     wk_abc127
+Date              Act  Type           Distance  Duration  Ascent  Key
+2026-05-11 07:42  1    RUNNING        8.42 km   0:44:18   62 m    wk_abc123
+2026-05-10 18:05  2    CYCLING        32.10 km  1:12:04   210 m   wk_abc124
+2026-05-09 06:30  11   HIKING         5.80 km   1:05:00   140 m   wk_abc125
+2026-05-08 07:10  1    RUNNING        10.05 km  0:52:30   78 m    wk_abc126
+2026-05-07 19:20  22   TRAIL_RUNNING  1.20 km   0:28:11   0 m     wk_abc127
 5 workouts  57.57km  3:42:21
 
 $ suuntool workouts list --since 14d --summary
@@ -26,11 +26,11 @@ ascent:    490 m
 descent:   480 m
 
 Per activity:
-Act  Count  Distance  Duration  ΔWoW
-1    2      18.47km   1:36:48   +1
-3    1      32.10km   1:12:04   0
-6    1      1.20km    0:28:11   0
-11   1      5.80km    1:05:00   -1
+Act  Type           Count  Distance  Duration  ΔWoW
+1    RUNNING        2      18.47km   1:36:48   +1
+2    CYCLING        1      32.10km   1:12:04   0
+11   HIKING         1      5.80km    1:05:00   -1
+22   TRAIL_RUNNING  1      1.20km    0:28:11   0
 
 $ suuntool wellness sleep --since 3d | jq -c '{date:(.startTime/1000|todate), score:.sleepScore, hrBpm:(.avgHeartRate*60)}'
 {"date":"2026-05-10T22:35:00Z","score":82,"hrBpm":54.6}
