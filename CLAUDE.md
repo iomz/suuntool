@@ -18,6 +18,7 @@ main.go
     ├── workouts.go      workouts list/get/count/stats/sml/fit/export/comments/react/edit/upload/delete (+ --summary, --stream, --since)
     ├── wellness.go      wellness sleep/activity/recovery/sleepstages NDJSON streams
     ├── wellness_sleep_pretty.go   TTY-only sleep table renderer (writeSleepFooter)
+    ├── mcp.go           `suuntool mcp` stdio MCP server entry (--allow-write / --allow-destructive)
     └── login_test.go, root_test.go, wellness_sleep_pretty_test.go    end-to-end via httptest
 internal/
 ├── auth/                signing pipeline. Zero net/http imports.
@@ -36,13 +37,21 @@ internal/
 │       ├── comments.go reactions.go edit.go share.go extensions.go upload.go   workout writes (x-totp via cmd layer)
 │       ├── wellness.go  NDJSON stream decoders (sleep/activity/recovery/sleepstages)
 │       ├── format.go    formatKm / formatDuration / renderTable(Styled) shared by Pretty()
-├── session/             session.go — XDG-aware persistence, 0600 perms, ErrNoSession
-└── output/              the single render boundary
-    ├── output.go        Render / RenderToFile, Opts, Prettier interface, resolveFormat
-    └── tty.go           IsStdoutTTY (respects NO_COLOR)
+├── session/             session.go — XDG-aware persistence, 0600 perms, ErrNoSession (+ TOTPHeaders helper)
+├── output/              the single render boundary
+│   ├── output.go        Render / RenderToFile, Opts, Prettier interface, resolveFormat
+│   └── tty.go           IsStdoutTTY (respects NO_COLOR)
+└── mcp/                 Model Context Protocol adapter (stdio server)
+    ├── server.go        Run(ctx, Opts), registerAll, deps (api.Client + session)
+    ├── registry.go      tier + toolRegistrar shape; per-tool registrars elsewhere
+    ├── tools_read.go    read-tier registrars (whoami, profile_*, workouts_*, wellness_*, doctor, activity_type_name)
+    ├── tools_write.go   --allow-write registrars (comment, react, edit, batch_update, share, extensions, upload)
+    ├── tools_destructive.go  --allow-destructive registrars (delete, uncomment, unreact)
+    ├── activity.go      activityId → activityName enrichment shared by workouts_list/get/stats
+    └── errors.go        mapError / mapErrorToCallToolResult (preserves *api.Error structure for the LLM)
 ```
 
-Dependency direction is strict: **cmd → api(/endpoints) → auth**, and **cmd → output**, never the reverse. `internal/output` does not import any Suunto type. `internal/auth` does not import `net/http`.
+Dependency direction is strict: **cmd → api(/endpoints) → auth**, and **cmd → output**, never the reverse. `internal/output` does not import any Suunto type. `internal/auth` does not import `net/http`. **`internal/mcp` is a peer of `cmd/` — same layering rules: it imports `api`, `auth`, `session`, never the reverse.**
 
 ## Patterns to follow
 
@@ -83,7 +92,8 @@ Dependency direction is strict: **cmd → api(/endpoints) → auth**, and **cmd 
 2. New file under `cmd/<verb>.go` that calls `authedClient()` → endpoint → `emit(v)`.
 3. Add a row to `endpointTable` in `cmd/endpoints.go` so agents discover it.
 4. Test the endpoint wrapper with `httptest.Server` (mirror `endpoints/session_test.go`).
-5. If the endpoint takes a `x-totp` header (reactions, comments, settings-safe, email/phone change), generate it with `auth.GenerateTOTP(session.Email, session.OffsetMS)` and pass via the `headers` map of `client.Do`.
+5. If the endpoint takes a `x-totp` header (reactions, comments, settings-safe, email/phone change), generate it with `auth.GenerateTOTP(session.Email, session.OffsetMS)` and pass via the `headers` map of `client.Do`. From the cmd or MCP layer, use `session.TOTPHeaders(sess)`.
+6. **Expose it via MCP.** Pick the right tier file (`tools_read.go`, `tools_write.go`, `tools_destructive.go`) and append a `toolRegistrar` closure that calls `sdkmcp.AddTool` with a typed args struct (`json` + `jsonschema` tags), the same endpoint wrapper from step 1, and `authGate(d)` if the endpoint is authed. Return the structured payload directly; `mapErrorToCallToolResult` wraps `*api.Error`s. Add a happy-path test in the matching `tools_*_test.go` using the in-memory MCP transport. `login`/`logout` stay CLI-only by design — don't port them.
 
 ## Failure modes — what each exit code looks like
 

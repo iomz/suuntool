@@ -191,11 +191,22 @@ These mutate server state. The `delete` command requires `--yes` in non-TTY cont
 
 ### MCP server
 
-| Command | Endpoint | Auth | Notes |
-|---------|----------|------|-------|
-| `mcp` | — | session-only | Stdio MCP server exposing the same endpoints as MCP tools. Read-only by default; `--allow-write` enables comment/react/edit/share/extensions/upload; `--allow-destructive` (requires `--allow-write`) adds delete/uncomment/unreact. |
+`suuntool mcp` exposes every read/write endpoint above as a [Model Context Protocol](https://modelcontextprotocol.io) tool over stdio. Point Claude Desktop, Claude Code, or any MCP-capable client at it and an LLM can call Suunto endpoints with typed arguments — no shell scraping.
 
-Drop-in `mcpServers` snippet for Claude Desktop or Claude Code:
+| Tier | Flag | Tools |
+|------|------|-------|
+| read (default) | none | `whoami`, `profile_settings`/`follow`/`user`, `workouts_list`/`get`/`count`/`stats`/`sml`/`fit`/`comments`, `wellness_sleep`/`activity`/`recovery`/`sleepstages`, `activity_type_name`, `doctor` |
+| write | `--allow-write` | `workouts_comment`/`react`/`edit`/`batch_update`/`share`/`extensions`/`upload` (binaries via base64) |
+| destructive | `--allow-destructive` (requires `--allow-write`) | `workouts_delete`/`uncomment`/`unreact` |
+
+```bash
+suuntool login                          # one-time interactive login (not exposed as a tool)
+suuntool mcp                            # read-only server
+suuntool mcp --allow-write              # add comment/react/edit/...
+suuntool mcp --allow-write --allow-destructive  # add deletes
+```
+
+Wire it into Claude Desktop / Claude Code via `~/.config/claude/claude_desktop_config.json` (or the equivalent settings UI):
 
 ```json
 {
@@ -205,7 +216,12 @@ Drop-in `mcpServers` snippet for Claude Desktop or Claude Code:
 }
 ```
 
-Run `suuntool login` once before starting the MCP server — login is interactive and intentionally not exposed as a tool. If the session is missing or expired, every authed tool returns a structured `AUTH_EXPIRED` error so the calling LLM can prompt the user to re-authenticate.
+Notes for callers:
+
+- Workouts surfaced through MCP are enriched with `activityName` next to the numeric `activityId` — no second lookup needed.
+- If no session is on disk, the server still starts; every authed tool returns a structured `{code: "AUTH_EXPIRED", hint: "Run: suuntool login"}` so the LLM can prompt the user instead of crashing.
+- `login`/`logout` are intentionally **not** exposed (interactive password, persisted session mutation). Both stay CLI-only.
+- Wellness NDJSON streams are buffered into `{items: [...]}` arrays with optional `limit` — request smaller windows for long histories.
 
 ### Discovery / meta
 
