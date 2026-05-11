@@ -1,12 +1,17 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/tajchert/suuntool/internal/api"
+	"github.com/tajchert/suuntool/internal/output"
+	"github.com/tajchert/suuntool/internal/session"
 )
 
 // Exit codes — stable, documented in --help.
@@ -75,4 +80,55 @@ func init() {
 	_ = viper.BindPFlag("timeout", pf.Lookup("timeout"))
 	viper.SetEnvPrefix("SUUNTOOL")
 	viper.AutomaticEnv()
+}
+
+// baseURL returns the API base URL, honoring SUUNTOOL_BASE_URL env var.
+func baseURL() string {
+	if u := os.Getenv("SUUNTOOL_BASE_URL"); u != "" {
+		return u
+	}
+	return api.DefaultBaseURL
+}
+
+// authedClient loads the saved session and returns an authenticated client.
+// Returns *api.Error{Code:"AUTH_EXPIRED"} when no session is on disk.
+func authedClient() (*api.Client, *session.Session, error) {
+	s, err := session.Load()
+	if err != nil {
+		if errors.Is(err, session.ErrNoSession) {
+			return nil, nil, &api.Error{
+				Code:    "AUTH_EXPIRED",
+				Message: "no saved session",
+				Hint:    "Run: suuntool login",
+				Exit:    ExitAuth,
+			}
+		}
+		return nil, nil, err
+	}
+	c := api.NewClient(baseURL(), s.SessionKey, flagTimeout)
+	return c, s, nil
+}
+
+// renderOpts builds output.Opts from current flags.
+func renderOpts() output.Opts {
+	return output.Opts{
+		Format: flagFormat,
+		IsTTY:  output.IsStdoutTTY(),
+	}
+}
+
+// emit writes v to the output file (if --output is set) or stdout.
+func emit(v any) error {
+	if flagOutput != "" {
+		return output.RenderToFile(flagOutput, v, renderOpts())
+	}
+	return output.Render(os.Stdout, v, renderOpts())
+}
+
+// pickTimeout returns flagTimeout if >0, else 30 seconds.
+func pickTimeout() time.Duration {
+	if flagTimeout > 0 {
+		return flagTimeout
+	}
+	return 30 * time.Second
 }
