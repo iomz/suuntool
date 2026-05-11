@@ -59,6 +59,7 @@ suuntool profile user alice                         # look up any user by handle
 suuntool workouts list --limit 5                    # most recent 5 workouts
 suuntool workouts list --limit 100 --summary        # totals over a window (km/time/ascent + per-activity)
 suuntool workouts list --since 7d                   # last 7 days (also: 12h, 2w, last-week, 2026-01-01)
+suuntool workouts list --since 2025-01-01 --stream > 2025.ndjson  # NDJSON, auto-paginates across cursors
 suuntool workouts get wk_abc123                     # one workout's metadata
 suuntool workouts stats                             # aggregate stats for you
 suuntool workouts count                             # workout count
@@ -130,7 +131,7 @@ NO_COLOR=1 suuntool whoami                          # plain-text TTY
 
 | Command | Endpoint | Auth | Notes |
 |---------|----------|------|-------|
-| `workouts list` | `GET /v1/workouts` | yes | Paginated list with `--since`, `--limit`, `--offset`; returns cursor `until`. `--summary` collapses the window into totals (count, distance, time, ascent, descent, per-activity) |
+| `workouts list` | `GET /v1/workouts` | yes | Paginated list with `--since`, `--limit`, `--offset`; returns cursor `until`. `--summary` collapses the window into totals (count, distance, time, ascent, descent, per-activity). `--stream` emits NDJSON and auto-paginates across every `until` cursor (no 100-page ceiling; `--limit` becomes optional cap) |
 | `workouts get <key>` | `GET /v1/workouts/{key}` | yes | One workout's metadata |
 | `workouts stats [user]` | `GET /v1/workouts/{user}/stats` | yes | Aggregate totals + per-activity breakdown |
 | `workouts count` | `GET /v1/workouts/count` | yes | Requires `until` + `sharingFlags` server-side (defaults handled) |
