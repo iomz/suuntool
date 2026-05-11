@@ -4,9 +4,9 @@ Audience: senior engineers (and LLM agents) joining this repo. Read this once, t
 
 ## What this is
 
-`suuntool` is a Go CLI for the **unofficial, reverse-engineered** Suunto / Sports-Tracker HTTP API. The wire contract was extracted from the shipping Android APK (`com.stt.android.suunto`). It is meant to be used by humans and by agents driving a terminal — every UX decision flows from that dual audience.
+`suuntool` is a Go CLI for the **unofficial** Suunto / Sports-Tracker HTTP API. It is meant to be used by humans and by agents driving a terminal — every UX decision flows from that dual audience.
 
-Reverse-engineering notes (endpoint inventory, signing scheme, Python reference client, golden-vector diagnostics) live in `handoff/`. That directory is **excluded via `.git/info/exclude`** — not `.gitignore` — so it stays local but is never committed. Treat it as load-bearing reference material; don't delete it.
+Internal reference material (endpoint inventory, signing scheme, Python reference client, golden-vector diagnostics) lives in `handoff/`. That directory is **excluded via `.git/info/exclude`** — not `.gitignore` — so it stays local but is never committed. Treat it as load-bearing reference material; don't delete it.
 
 ## Layering — strict, one-way
 
@@ -21,7 +21,7 @@ main.go
     └── login_test.go, root_test.go, wellness_sleep_pretty_test.go    end-to-end via httptest
 internal/
 ├── auth/                signing pipeline. Zero net/http imports.
-│   ├── keys.go          embedded APK constants (login parts, TOTP parts, package name, user-agent)
+│   ├── keys.go          embedded signing constants (login parts, TOTP parts, package name, user-agent)
 │   ├── obfuscator.go    KeyObfuscator XOR + lossy-UTF-8 replace; DeriveLoginSecret / DeriveTOTPMasterSecret
 │   ├── totp.go          PBKDF2-HmacSHA1 + RFC 6238 HOTP → GenerateTOTP(salt, offsetMS)
 │   └── signer.go        SignParams(path, []Param) → base64url(SHA-256), RandomSalt, NowMS
@@ -70,7 +70,7 @@ Dependency direction is strict: **cmd → api(/endpoints) → auth**, and **cmd 
 ## Key code to read first (in this order)
 
 1. `internal/auth/obfuscator.go` — `DeriveLoginSecret`, `utf8Replace`. The whole signing scheme hinges on matching Java's lossy `new String(bytes, UTF-8)` semantics; the test in `obfuscator_test.go` proves it.
-2. `internal/auth/signer.go` — `SignParams`. Build string verbatim, no URL-encoding, SHA-256, base64url no-padding. Same shape as `SessionRemoteApi.Companion.d()` in the APK.
+2. `internal/auth/signer.go` — `SignParams`. Build string verbatim, no URL-encoding, SHA-256, base64url no-padding. Mirrors the upstream signing routine.
 3. `internal/auth/totp.go` — `GenerateTOTP`. Java PBEKeySpec quirk: only the low byte of each password char is used.
 4. `internal/api/client.go` — `Do()` is the only place HTTP status codes are mapped to exit codes; if you're surprised by a CLI exit code, start here.
 5. `internal/api/endpoints/session.go` — `Login`. Note that `/login2` returns the session at the top level, NOT in an AskoResponse envelope — every other endpoint does.
@@ -105,7 +105,7 @@ Endpoints to babysit:
 - **Anything with `x-totp`** (comments post, react/unreact, settings-safe, email/phone change, workout edit/delete) — server validates the TOTP against its clock. If the laptop clock drifts >30s, every write returns 403 until you re-`login` (refreshes `OffsetMS`).
 - **`/login2`** — does *not* return an AskoResponse envelope. Decoding failures here mean Suunto changed the login response shape, not a normal error.
 
-What a signing-key rotation feels like, in practice: `login` succeeds against your password but every subsequent call returns 401 (exit 4) with a generic body, *even immediately after a fresh login*. Or `login` itself starts returning 401 / 403 with no useful body. That's the canary — confirm by re-running `handoff/reference/secret_check.py` against the current APK; if the goldens have moved, follow the `CONTRIBUTING.md` rotation procedure.
+What a signing-key rotation feels like, in practice: `login` succeeds against your password but every subsequent call returns 401 (exit 4) with a generic body, *even immediately after a fresh login*. Or `login` itself starts returning 401 / 403 with no useful body. That's the canary — confirm by re-running `handoff/reference/secret_check.py` against the current app release; if the goldens have moved, follow the `CONTRIBUTING.md` rotation procedure.
 
 ## `--summary` aggregation math (workouts list)
 
@@ -120,4 +120,4 @@ What a signing-key rotation feels like, in practice: `login` succeeds against yo
 
 ## Signing-key rotation
 
-Suunto rotates the embedded keys on major app version bumps. See `CONTRIBUTING.md` for the procedure — short version: re-decompile the APK with `jadx`, update the five constants in `internal/auth/keys.go`, regenerate goldens from the Python diagnostics, and update the `expected*` constants in `internal/auth/*_test.go`. The test suite is the canary.
+Suunto rotates the embedded keys on major app version bumps. See `CONTRIBUTING.md` for the procedure — short version: refresh the key material per the new app release, update the five constants in `internal/auth/keys.go`, regenerate goldens from the Python diagnostics, and update the `expected*` constants in `internal/auth/*_test.go`. The test suite is the canary.
