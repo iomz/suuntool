@@ -215,3 +215,37 @@ func TestWorkoutList_Summary_Empty(t *testing.T) {
 	assert.Nil(t, s.ByActivity)
 	assert.Contains(t, s.Pretty(), "workouts:  0")
 }
+
+func TestWorkoutList_SummaryWithWoW(t *testing.T) {
+	now := int64(1_700_000_000_000) // fixed clock for the test
+	day := int64(24 * 3600 * 1000)
+	l := endpoints.WorkoutList{Items: []endpoints.RemoteSyncedWorkout{
+		// this-week bucket: 3 of activity 1, 1 of activity 5
+		{Key: "a", ActivityID: 1, StartTime: now - 1*day},
+		{Key: "b", ActivityID: 1, StartTime: now - 2*day},
+		{Key: "c", ActivityID: 1, StartTime: now - 6*day},
+		{Key: "d", ActivityID: 5, StartTime: now - 3*day},
+		// prev-week bucket: 1 of activity 1, 3 of activity 5
+		{Key: "e", ActivityID: 1, StartTime: now - 9*day},
+		{Key: "f", ActivityID: 5, StartTime: now - 8*day},
+		{Key: "g", ActivityID: 5, StartTime: now - 10*day},
+		{Key: "h", ActivityID: 5, StartTime: now - 13*day},
+		// older — ignored for WoW
+		{Key: "i", ActivityID: 1, StartTime: now - 30*day},
+	}}
+	s := l.SummaryWithWoW(now)
+	require.NotNil(t, s.WeekOverWeek)
+	assert.Equal(t, 2, s.WeekOverWeek[1].Count)  // 3 - 1
+	assert.Equal(t, -2, s.WeekOverWeek[5].Count) // 1 - 3
+
+	// Pretty without color includes signed deltas.
+	plain := s.Pretty()
+	assert.Contains(t, plain, "ΔWoW")
+	assert.Contains(t, plain, "+2")
+	assert.Contains(t, plain, "-2")
+
+	// With colorizer the values are wrapped — width is unchanged.
+	colored := s.RenderPretty(func(p, kind string) string { return "[" + kind + ":" + p + "]" })
+	assert.Contains(t, colored, "[pos:+2]")
+	assert.Contains(t, colored, "[neg:-2]")
+}

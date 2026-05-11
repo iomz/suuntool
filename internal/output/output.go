@@ -13,6 +13,10 @@ import (
 type Opts struct {
 	Format string // "json", "pretty", "auto", or ""
 	IsTTY  bool
+	// Fields, when non-empty, projects the encoded output down to just these
+	// JSON keys before rendering. Forces JSON output (pretty rendering of an
+	// arbitrary projection isn't well-defined). See projectJSON for shape rules.
+	Fields []string
 }
 
 // Prettier is implemented by values that know how to produce human-readable output.
@@ -48,6 +52,9 @@ func resolveFormat(f string, isTTY bool) string {
 
 // Render writes v to w in the format specified by opts.
 func Render(w io.Writer, v any, opts Opts) error {
+	if len(opts.Fields) > 0 {
+		return renderProjected(w, v, opts.Fields)
+	}
 	switch resolveFormat(opts.Format, opts.IsTTY) {
 	case "pretty":
 		if p, ok := v.(Prettier); ok {
@@ -92,6 +99,22 @@ func joinTSV(cells []string) string {
 		scrubbed[i] = tsvScrubber.Replace(c)
 	}
 	return strings.Join(scrubbed, "\t")
+}
+
+// renderProjected encodes v to JSON, keeps only the requested fields, and
+// writes the result. Always JSON — pretty mode is bypassed because a projected
+// row no longer matches the type's hand-tuned table layout.
+func renderProjected(w io.Writer, v any, fields []string) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	out, err := projectJSON(raw, fields)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(out)
+	return err
 }
 
 func encodeJSON(w io.Writer, v any) error {

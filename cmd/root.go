@@ -38,6 +38,7 @@ var (
 	flagNoColor bool
 	flagTimeout time.Duration
 	flagConfig  string
+	flagFields  []string
 )
 
 var rootCmd = &cobra.Command{
@@ -79,6 +80,7 @@ func init() {
 	pf.BoolVar(&flagNoColor, "no-color", false, "Disable ANSI styling")
 	pf.DurationVar(&flagTimeout, "timeout", 30*time.Second, "HTTP timeout")
 	pf.StringVar(&flagConfig, "config", "", "Path to config file")
+	pf.StringSliceVar(&flagFields, "fields", nil, "Project output to these JSON fields (e.g. key,startTime). Forces JSON.")
 
 	_ = viper.BindPFlag("format", pf.Lookup("format"))
 	_ = viper.BindPFlag("timeout", pf.Lookup("timeout"))
@@ -118,6 +120,7 @@ func renderOpts() output.Opts {
 	return output.Opts{
 		Format: flagFormat,
 		IsTTY:  output.IsStdoutTTY(),
+		Fields: flagFields,
 	}
 }
 
