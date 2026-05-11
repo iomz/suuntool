@@ -175,6 +175,24 @@ These mutate server state. The `delete` command requires `--yes` in non-TTY cont
 >
 > **Rate limiting.** Suunto's quotas are conservative (a few QPS). Don't batch-spam comments or reactions — your account can be flagged.
 
+### MCP server
+
+| Command | Endpoint | Auth | Notes |
+|---------|----------|------|-------|
+| `mcp` | — | session-only | Stdio MCP server exposing the same endpoints as MCP tools. Read-only by default; `--allow-write` enables comment/react/edit/share/extensions/upload; `--allow-destructive` (requires `--allow-write`) adds delete/uncomment/unreact. |
+
+Drop-in `mcpServers` snippet for Claude Desktop or Claude Code:
+
+```json
+{
+  "mcpServers": {
+    "suuntool": { "command": "suuntool", "args": ["mcp"] }
+  }
+}
+```
+
+Run `suuntool login` once before starting the MCP server — login is interactive and intentionally not exposed as a tool. If the session is missing or expired, every authed tool returns a structured `AUTH_EXPIRED` error so the calling LLM can prompt the user to re-authenticate.
+
 ### Discovery / meta
 
 | Command | Endpoint | Auth | Notes |
