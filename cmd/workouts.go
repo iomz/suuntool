@@ -195,8 +195,8 @@ stdout or, with -o, to a file. Mutually exclusive with --summary.`,
 
 		list := &endpoints.WorkoutList{Items: all, Until: lastUntil}
 		if workoutsListSummary {
-			s := list.Summary()
-			return emit(&s)
+			s := list.SummaryWithWoW(0)
+			return emit(summaryView{WorkoutSummary: s, Color: useTTYColor()})
 		}
 		return emit(list)
 	},
@@ -694,6 +694,45 @@ type shareResult struct {
 }
 
 func (s shareResult) Pretty() string { return s.URL }
+
+// summaryView wraps WorkoutSummary so the Pretty() rendering can apply ANSI
+// colors to the ΔWoW column when we're going to a TTY. JSON encoding flattens
+// the embedded WorkoutSummary; Color itself is excluded.
+type summaryView struct {
+	endpoints.WorkoutSummary
+	Color bool `json:"-"`
+}
+
+func (v summaryView) Pretty() string {
+	if !v.Color {
+		return v.WorkoutSummary.Pretty()
+	}
+	return v.WorkoutSummary.RenderPretty(ansiDeltaColor)
+}
+
+// ansiDeltaColor wraps a plain delta cell in ANSI color codes. Green/red carry
+// the sign at a glance; zero is dimmed so it reads as "no change" without
+// pulling the eye.
+func ansiDeltaColor(plain, kind string) string {
+	switch kind {
+	case "pos":
+		return "\x1b[32m" + plain + "\x1b[0m"
+	case "neg":
+		return "\x1b[31m" + plain + "\x1b[0m"
+	default:
+		return "\x1b[2m" + plain + "\x1b[0m"
+	}
+}
+
+// useTTYColor reports whether the summary should be colorized. We color only
+// when the primary sink is the terminal: no -o file override, and stdout is an
+// interactive TTY (output.IsStdoutTTY honors NO_COLOR).
+func useTTYColor() bool {
+	if flagOutput != "" {
+		return false
+	}
+	return output.IsStdoutTTY()
+}
 
 // workouts extensions <key>
 var flagExtTypes []string

@@ -64,7 +64,19 @@ type WorkoutSummary struct {
 	TotalAscent   float64                  `json:"totalAscent"`
 	TotalDescent  float64                  `json:"totalDescent"`
 	ByActivity    map[int]PerActivityStats `json:"byActivity,omitempty"`
+	// WeekOverWeek, when populated by SummaryWithWoW, is the per-activity
+	// change in workout count between the trailing 7 days and the prior 7 days.
+	WeekOverWeek map[int]ActivityDelta `json:"weekOverWeek,omitempty"`
 }
+
+// ActivityDelta is a week-over-week change row for one activity.
+type ActivityDelta struct {
+	Count int `json:"count"`
+}
+
+// DeltaColorizer maps a plain delta cell to a styled version. kind is one of
+// "pos", "neg", "zero". May be nil (no styling).
+type DeltaColorizer func(plain, kind string) string
 
 // Summary computes aggregate totals over the items in the list.
 func (l WorkoutList) Summary() WorkoutSummary {
@@ -89,30 +101,51 @@ func (l WorkoutList) Summary() WorkoutSummary {
 
 // Table returns the per-activity breakdown as headers + rows, sorted by
 // activity ID. The aggregate scalars are surfaced by Pretty() as a header
-// block — they aren't part of the table.
+// block — they aren't part of the table. If WeekOverWeek is populated, a
+// trailing "ΔWoW" column is added (signed counts) so TSV consumers see it too.
 func (s WorkoutSummary) Table() ([]string, [][]string) {
 	headers := []string{"Act", "Count", "Distance", "Duration"}
+	hasWoW := s.WeekOverWeek != nil
+	if hasWoW {
+		headers = append(headers, "ΔWoW")
+	}
+	ids := s.sortedActivityIDs()
+	rows := make([][]string, 0, len(ids))
+	for _, id := range ids {
+		a := s.ByActivity[id]
+		r := []string{
+			fmt.Sprintf("%d", a.ActivityID),
+			fmt.Sprintf("%d", a.Count),
+			formatKm(a.Distance),
+			formatDuration(a.Duration),
+		}
+		if hasWoW {
+			r = append(r, formatDelta(s.WeekOverWeek[id].Count))
+		}
+		rows = append(rows, r)
+	}
+	return headers, rows
+}
+
+// sortedActivityIDs returns ByActivity's keys in ascending order. Shared by
+// Table() and the colorizer so row index → activity-ID is consistent.
+func (s WorkoutSummary) sortedActivityIDs() []int {
 	ids := make([]int, 0, len(s.ByActivity))
 	for id := range s.ByActivity {
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
-	rows := make([][]string, 0, len(ids))
-	for _, id := range ids {
-		a := s.ByActivity[id]
-		rows = append(rows, []string{
-			fmt.Sprintf("%d", a.ActivityID),
-			fmt.Sprintf("%d", a.Count),
-			formatKm(a.Distance),
-			formatDuration(a.Duration),
-		})
-	}
-	return headers, rows
+	return ids
 }
 
 // Pretty returns a multi-line summary of the aggregate, with the per-activity
 // breakdown rendered as an aligned table.
-func (s WorkoutSummary) Pretty() string {
+func (s WorkoutSummary) Pretty() string { return s.RenderPretty(nil) }
+
+// RenderPretty is Pretty with an optional colorizer applied to the ΔWoW cells
+// when WeekOverWeek is populated. cmd-layer callers pass an ANSI colorizer
+// when emitting to a TTY; passing nil produces uncolored output.
+func (s WorkoutSummary) RenderPretty(color DeltaColorizer) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "workouts:  %d\n", s.Count)
 	fmt.Fprintf(&sb, "distance:  %s\n", formatKm(s.TotalDistance))
@@ -121,10 +154,81 @@ func (s WorkoutSummary) Pretty() string {
 	fmt.Fprintf(&sb, "descent:   %.0f m", s.TotalDescent)
 	if len(s.ByActivity) > 0 {
 		headers, rows := s.Table()
+		var styler cellStyler
+		if s.WeekOverWeek != nil && color != nil {
+			ids := s.sortedActivityIDs()
+			deltaCol := len(headers) - 1
+			styler = func(col, row int, plain string) string {
+				if col != deltaCol || row < 0 {
+					return plain
+				}
+				d := s.WeekOverWeek[ids[row]].Count
+				kind := "zero"
+				switch {
+				case d > 0:
+					kind = "pos"
+				case d < 0:
+					kind = "neg"
+				}
+				return color(plain, kind)
+			}
+		}
 		sb.WriteString("\n\nPer activity:\n")
-		sb.WriteString(renderTable(headers, rows))
+		sb.WriteString(renderTableStyled(headers, rows, styler))
 	}
 	return sb.String()
+}
+
+// formatDelta renders an int with an explicit sign for non-negative values
+// so the ΔWoW column reads at a glance: +3 / -2 / 0.
+func formatDelta(d int) string {
+	if d > 0 {
+		return fmt.Sprintf("+%d", d)
+	}
+	return fmt.Sprintf("%d", d)
+}
+
+// SummaryWithWoW returns Summary() plus per-activity week-over-week deltas
+// computed from l.Items. Items with startTime in [nowMS-7d, nowMS) are the
+// "this week" bucket; items in [nowMS-14d, nowMS-7d) are the "previous week"
+// bucket; older items are ignored for the delta (but still counted in the
+// aggregate totals). nowMS == 0 falls back to time.Now().UnixMilli().
+func (l WorkoutList) SummaryWithWoW(nowMS int64) WorkoutSummary {
+	s := l.Summary()
+	if nowMS == 0 {
+		nowMS = time.Now().UnixMilli()
+	}
+	const weekMS = int64(7 * 24 * 3600 * 1000)
+	thisStart := nowMS - weekMS
+	prevStart := nowMS - 2*weekMS
+	type bucket struct{ this, prev int }
+	by := map[int]*bucket{}
+	for _, w := range l.Items {
+		switch {
+		case w.StartTime >= thisStart && w.StartTime < nowMS:
+			b := by[w.ActivityID]
+			if b == nil {
+				b = &bucket{}
+				by[w.ActivityID] = b
+			}
+			b.this++
+		case w.StartTime >= prevStart && w.StartTime < thisStart:
+			b := by[w.ActivityID]
+			if b == nil {
+				b = &bucket{}
+				by[w.ActivityID] = b
+			}
+			b.prev++
+		}
+	}
+	if len(by) == 0 {
+		return s
+	}
+	s.WeekOverWeek = make(map[int]ActivityDelta, len(by))
+	for id, b := range by {
+		s.WeekOverWeek[id] = ActivityDelta{Count: b.this - b.prev}
+	}
+	return s
 }
 
 // Table returns the workout page as headers + rows. Used by Pretty() for the

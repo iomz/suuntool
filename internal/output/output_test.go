@@ -84,6 +84,18 @@ func TestRenderToFile_TSVFromExtension(t *testing.T) {
 	assert.Equal(t, "a\tb\n1\ttwo\nhas tab\thas newline\n", string(data))
 }
 
+func TestRender_FieldsProjectsArrayAndForcesJSON(t *testing.T) {
+	var buf bytes.Buffer
+	items := []sample{{"x", 1}, {"y", 2}}
+	// IsTTY+Format=pretty would normally call Pretty(); --fields overrides it.
+	err := output.Render(&buf, items, output.Opts{Format: "pretty", IsTTY: true, Fields: []string{"name"}})
+	require.NoError(t, err)
+	out := buf.String()
+	assert.Contains(t, out, `"name": "x"`)
+	assert.NotContains(t, out, `"score"`)
+	assert.NotContains(t, out, "name=") // Pretty() output is bypassed
+}
+
 func TestWriteRaw_StreamsToFile(t *testing.T) {
 	payload := make([]byte, 1024)
 	_, err := rand.Read(payload)
