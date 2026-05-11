@@ -45,7 +45,7 @@ func (w RemoteSyncedWorkout) Pretty() string {
 	start := time.Unix(0, w.StartTime*int64(time.Millisecond)).UTC().Format(time.RFC3339)
 	km := w.TotalDistance / 1000.0
 	dur := formatDuration(w.TotalTime)
-	return fmt.Sprintf("%s  %s  act=%d  %.2fkm  %s", w.Key, start, w.ActivityID, km, dur)
+	return fmt.Sprintf("%s  %s  %s (act=%d)  %.2fkm  %s", w.Key, start, ActivityName(w.ActivityID), w.ActivityID, km, dur)
 }
 
 // WorkoutList wraps a page of workouts with the cursor metadata so JSON
@@ -104,7 +104,7 @@ func (l WorkoutList) Summary() WorkoutSummary {
 // block — they aren't part of the table. If WeekOverWeek is populated, a
 // trailing "ΔWoW" column is added (signed counts) so TSV consumers see it too.
 func (s WorkoutSummary) Table() ([]string, [][]string) {
-	headers := []string{"Act", "Count", "Distance", "Duration"}
+	headers := []string{"Act", "Type", "Count", "Distance", "Duration"}
 	hasWoW := s.WeekOverWeek != nil
 	if hasWoW {
 		headers = append(headers, "ΔWoW")
@@ -115,6 +115,7 @@ func (s WorkoutSummary) Table() ([]string, [][]string) {
 		a := s.ByActivity[id]
 		r := []string{
 			fmt.Sprintf("%d", a.ActivityID),
+			ActivityName(a.ActivityID),
 			fmt.Sprintf("%d", a.Count),
 			formatKm(a.Distance),
 			formatDuration(a.Duration),
@@ -234,12 +235,13 @@ func (l WorkoutList) SummaryWithWoW(nowMS int64) WorkoutSummary {
 // Table returns the workout page as headers + rows. Used by Pretty() for the
 // aligned TTY table and by --format tsv for machine consumption.
 func (l WorkoutList) Table() ([]string, [][]string) {
-	headers := []string{"Date", "Act", "Distance", "Duration", "Ascent", "Key"}
+	headers := []string{"Date", "Act", "Type", "Distance", "Duration", "Ascent", "Key"}
 	rows := make([][]string, 0, len(l.Items))
 	for _, w := range l.Items {
 		rows = append(rows, []string{
 			time.Unix(0, w.StartTime*int64(time.Millisecond)).Local().Format("2006-01-02 15:04"),
 			fmt.Sprintf("%d", w.ActivityID),
+			ActivityName(w.ActivityID),
 			fmt.Sprintf("%.2f km", w.TotalDistance/1000.0),
 			formatDuration(w.TotalTime),
 			fmt.Sprintf("%.0f m", w.TotalAscent),
@@ -361,11 +363,12 @@ type WorkoutStats struct {
 // scalars (totalDistance/Time/Energy/Days) live on s and are surfaced by
 // Pretty() as a header block — they aren't part of the table.
 func (s WorkoutStats) Table() ([]string, [][]string) {
-	headers := []string{"Act", "Count", "Distance", "Duration", "Energy"}
+	headers := []string{"Act", "Type", "Count", "Distance", "Duration", "Energy"}
 	rows := make([][]string, 0, len(s.AllStats))
 	for _, a := range s.AllStats {
 		rows = append(rows, []string{
 			fmt.Sprintf("%d", a.ActivityID),
+			ActivityName(a.ActivityID),
 			fmt.Sprintf("%d", a.Count),
 			formatKm(a.Distance),
 			formatDuration(a.Duration),
