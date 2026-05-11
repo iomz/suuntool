@@ -340,6 +340,64 @@ Quotas are conservative — don't batch-spam comments.`,
   echo "multi-line\nrun report" | suuntool workouts comment wk_abc123 --stdin`,
 }
 
+// workouts react <key>
+var flagReactType string
+
+var workoutsReactCmd = &cobra.Command{
+	Use:   "react <key>",
+	Short: "Add a reaction to a workout (requires x-totp)",
+	Long: `Add a reaction (currently only --reaction=like is supported) to a workout.
+
+The server validates x-totp; the CLI auto-generates one from the session.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if flagReactType != string(endpoints.ReactionLike) {
+			return &api.Error{
+				Code:    "USAGE",
+				Message: "unknown --reaction value " + flagReactType + " (supported: like)",
+				Hint:    "Pass --reaction like",
+				Exit:    ExitUsage,
+			}
+		}
+		c, sess, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		raw, err := endpoints.AddReaction(ctx, c, args[0], endpoints.Reaction(flagReactType), totpHeaders(sess))
+		if err != nil {
+			return err
+		}
+		return emit(raw)
+	},
+	Example: `  suuntool workouts react wk_abc123
+  suuntool workouts react wk_abc123 --reaction like --format json`,
+}
+
+// workouts unreact <key>
+var workoutsUnreactCmd = &cobra.Command{
+	Use:   "unreact <key>",
+	Short: "Remove the caller's reaction from a workout",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		if err := endpoints.RemoveReaction(ctx, c, args[0]); err != nil {
+			return err
+		}
+		if !flagQuiet {
+			fmt.Fprintln(os.Stderr, "Removed reaction from", args[0])
+		}
+		return nil
+	},
+	Example: `  suuntool workouts unreact wk_abc123`,
+}
+
 // workouts uncomment <comment-key>
 var workoutsUncommentCmd = &cobra.Command{
 	Use:   "uncomment <comment-key>",
@@ -375,7 +433,10 @@ func init() {
 
 	workoutsCommentCmd.Flags().BoolVar(&flagCommentStdin, "stdin", false, "Read comment text from stdin (for multi-line or piped input)")
 
+	workoutsReactCmd.Flags().StringVar(&flagReactType, "reaction", "like", "Reaction type (currently only 'like')")
+
 	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd,
-		workoutsCommentsCmd, workoutsCommentCmd, workoutsUncommentCmd)
+		workoutsCommentsCmd, workoutsCommentCmd, workoutsUncommentCmd,
+		workoutsReactCmd, workoutsUnreactCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }
