@@ -37,6 +37,8 @@ var endpointTable = []endpointRow{
 	{"workouts uncomment <comment-key>", "DELETE", "/v1/workouts/comment/{commentKey}", true},
 	{"workouts react <key>", "POST", "/v1/workouts/reaction/{key}", true},
 	{"workouts unreact <key>", "DELETE", "/v1/workouts/reaction/{key}", true},
+	{"workouts edit <key>", "PUT", "/v1/workouts/{key}/attributes", true},
+	{"workouts batch-update", "POST", "/v1/workouts/batchUpdate", true},
 }
 
 var endpointsCmd = &cobra.Command{

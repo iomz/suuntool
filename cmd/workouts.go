@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -398,6 +399,132 @@ var workoutsUnreactCmd = &cobra.Command{
 	Example: `  suuntool workouts unreact wk_abc123`,
 }
 
+// workouts edit <key>
+var flagEditSet []string // repeatable --set field=<json-literal>
+
+var workoutsEditCmd = &cobra.Command{
+	Use:   "edit <key>",
+	Short: "Edit workout attributes (partial PUT)",
+	Long: `Apply a partial update to a workout's attributes via PUT /v1/workouts/{key}/attributes.
+
+Each --set value is parsed as field=<json-literal>:
+  --set totalAscent=100         # number
+  --set "name=\"Morning run\""  # string (note quoting)
+  --set isPublic=true           # bool
+  --set notes=null              # explicit null
+
+Edits are non-destructive (no confirmation prompt). Unknown fields are rejected
+by the server — refer to handoff §6.4 if you see a 5xx.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(flagEditSet) == 0 {
+			return &api.Error{Code: "USAGE", Message: "at least one --set required", Hint: "Pass --set field=<json>", Exit: ExitUsage}
+		}
+		patch, err := parseSetFlags(flagEditSet)
+		if err != nil {
+			return err
+		}
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		raw, err := endpoints.EditWorkout(ctx, c, args[0], patch)
+		if err != nil {
+			return err
+		}
+		return emit(raw)
+	},
+	Example: `  suuntool workouts edit wk_abc123 --set totalAscent=120
+  suuntool workouts edit wk_abc123 --set "name=\"Long ride\"" --set isPublic=true`,
+}
+
+// parseSetFlags converts ["field=value", ...] into a JSON-typed map. The value
+// part is parsed as a JSON literal (so 100 → float64, "x" → string, true → bool,
+// null → nil). On parse error, fall back to treating the value as a raw string
+// — this lets users write `--set name=Morning` without quoting numerics.
+func parseSetFlags(in []string) (map[string]any, error) {
+	out := make(map[string]any, len(in))
+	for _, raw := range in {
+		idx := strings.Index(raw, "=")
+		if idx < 0 {
+			return nil, &api.Error{Code: "USAGE", Message: "expected field=value in --set, got " + raw, Exit: ExitUsage}
+		}
+		key, val := raw[:idx], raw[idx+1:]
+		if key == "" {
+			return nil, &api.Error{Code: "USAGE", Message: "empty field in --set " + raw, Exit: ExitUsage}
+		}
+		var v any
+		if err := json.Unmarshal([]byte(val), &v); err == nil {
+			out[key] = v
+		} else {
+			out[key] = val // raw string fallback
+		}
+	}
+	return out, nil
+}
+
+// workouts batch-update
+var flagBatchFile string
+
+var workoutsBatchUpdateCmd = &cobra.Command{
+	Use:   "batch-update",
+	Short: "Apply a batch of workout updates (POST /v1/workouts/batchUpdate)",
+	Long: `Post a JSON array of update entries. Each entry must include a "key" field
+plus the fields to update. Read from a file via --file <path>, or from stdin
+when --file is "-" or omitted.
+
+Example entries file:
+  [
+    {"key":"wk_abc123","totalAscent":120},
+    {"key":"wk_xyz789","name":"Recovery jog"}
+  ]`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var src io.Reader
+		switch {
+		case flagBatchFile == "" || flagBatchFile == "-":
+			src = os.Stdin
+		default:
+			f, err := os.Open(flagBatchFile)
+			if err != nil {
+				return &api.Error{Code: "USAGE", Message: err.Error(), Exit: ExitUsage}
+			}
+			defer f.Close()
+			src = f
+		}
+		data, err := io.ReadAll(src)
+		if err != nil {
+			return err
+		}
+		var entries []map[string]any
+		if err := json.Unmarshal(data, &entries); err != nil {
+			return &api.Error{Code: "USAGE", Message: "invalid JSON: " + err.Error(), Hint: "Body must be a JSON array of update objects", Exit: ExitUsage}
+		}
+		if len(entries) == 0 {
+			return &api.Error{Code: "USAGE", Message: "empty entries array", Exit: ExitUsage}
+		}
+		for i, e := range entries {
+			if _, ok := e["key"]; !ok {
+				return &api.Error{Code: "USAGE", Message: fmt.Sprintf("entry %d missing \"key\"", i), Exit: ExitUsage}
+			}
+		}
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		raw, err := endpoints.BatchUpdate(ctx, c, entries)
+		if err != nil {
+			return err
+		}
+		return emit(raw)
+	},
+	Example: `  suuntool workouts batch-update --file edits.json
+  cat edits.json | suuntool workouts batch-update`,
+}
+
 // workouts uncomment <comment-key>
 var workoutsUncommentCmd = &cobra.Command{
 	Use:   "uncomment <comment-key>",
@@ -435,8 +562,14 @@ func init() {
 
 	workoutsReactCmd.Flags().StringVar(&flagReactType, "reaction", "like", "Reaction type (currently only 'like')")
 
+	workoutsEditCmd.Flags().StringArrayVar(&flagEditSet, "set", nil, "field=<json> attribute update (repeatable, required)")
+	_ = workoutsEditCmd.MarkFlagRequired("set")
+
+	workoutsBatchUpdateCmd.Flags().StringVar(&flagBatchFile, "file", "", "Path to JSON array of update entries (default: stdin)")
+
 	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd,
 		workoutsCommentsCmd, workoutsCommentCmd, workoutsUncommentCmd,
-		workoutsReactCmd, workoutsUnreactCmd)
+		workoutsReactCmd, workoutsUnreactCmd,
+		workoutsEditCmd, workoutsBatchUpdateCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }
