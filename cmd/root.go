@@ -13,7 +13,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/tajchert/suuntool/internal/api"
-	"github.com/tajchert/suuntool/internal/auth"
 	"github.com/tajchert/suuntool/internal/output"
 	"github.com/tajchert/suuntool/internal/session"
 )
@@ -138,16 +137,6 @@ func pickTimeout() time.Duration {
 		return flagTimeout
 	}
 	return 30 * time.Second
-}
-
-// totpHeaders returns the x-totp header required by certain write endpoints
-// (reactions, comments, settings-safe variant, email/phone change). The TOTP
-// is derived from the session's email + server-time offset; values rotate
-// every 30 seconds, so callers should compute fresh per request.
-func totpHeaders(s *session.Session) map[string]string {
-	return map[string]string{
-		"x-totp": auth.GenerateTOTP(s.Email, s.OffsetMS),
-	}
 }
 
 // mergeHeaders returns a new map combining a and b (b wins on collision).

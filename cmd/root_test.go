@@ -10,7 +10,7 @@ import (
 
 func TestTotpHeaders_ProducesSixDigitToken(t *testing.T) {
 	s := &session.Session{Email: "alice@example.com", OffsetMS: 0}
-	got := totpHeaders(s)
+	got := session.TOTPHeaders(s)
 	tok, ok := got["x-totp"]
 	require.True(t, ok, "x-totp header missing")
 	require.Len(t, tok, 6, "TOTP should be 6 digits")
