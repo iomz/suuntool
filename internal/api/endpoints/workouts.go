@@ -87,6 +87,29 @@ func (l WorkoutList) Summary() WorkoutSummary {
 	return s
 }
 
+// Table returns the per-activity breakdown as headers + rows, sorted by
+// activity ID. The aggregate scalars are surfaced by Pretty() as a header
+// block — they aren't part of the table.
+func (s WorkoutSummary) Table() ([]string, [][]string) {
+	headers := []string{"Act", "Count", "Distance", "Duration"}
+	ids := make([]int, 0, len(s.ByActivity))
+	for id := range s.ByActivity {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	rows := make([][]string, 0, len(ids))
+	for _, id := range ids {
+		a := s.ByActivity[id]
+		rows = append(rows, []string{
+			fmt.Sprintf("%d", a.ActivityID),
+			fmt.Sprintf("%d", a.Count),
+			formatKm(a.Distance),
+			formatDuration(a.Duration),
+		})
+	}
+	return headers, rows
+}
+
 // Pretty returns a multi-line summary of the aggregate, with the per-activity
 // breakdown rendered as an aligned table.
 func (s WorkoutSummary) Pretty() string {
@@ -97,31 +120,16 @@ func (s WorkoutSummary) Pretty() string {
 	fmt.Fprintf(&sb, "ascent:    %.0f m\n", s.TotalAscent)
 	fmt.Fprintf(&sb, "descent:   %.0f m", s.TotalDescent)
 	if len(s.ByActivity) > 0 {
-		ids := make([]int, 0, len(s.ByActivity))
-		for id := range s.ByActivity {
-			ids = append(ids, id)
-		}
-		sort.Ints(ids)
-		rows := make([][]string, 0, len(ids))
-		for _, id := range ids {
-			a := s.ByActivity[id]
-			rows = append(rows, []string{
-				fmt.Sprintf("%d", a.ActivityID),
-				fmt.Sprintf("%d", a.Count),
-				formatKm(a.Distance),
-				formatDuration(a.Duration),
-			})
-		}
+		headers, rows := s.Table()
 		sb.WriteString("\n\nPer activity:\n")
-		sb.WriteString(renderTable([]string{"Act", "Count", "Distance", "Duration"}, rows))
+		sb.WriteString(renderTable(headers, rows))
 	}
 	return sb.String()
 }
 
-// Pretty renders the workout page as a fixed-width table with an aggregate
-// footer (count, distance, time) so the human render is self-summarizing.
-// Empty list still emits a header row + footer so the output is recognisable.
-func (l WorkoutList) Pretty() string {
+// Table returns the workout page as headers + rows. Used by Pretty() for the
+// aligned TTY table and by --format tsv for machine consumption.
+func (l WorkoutList) Table() ([]string, [][]string) {
 	headers := []string{"Date", "Act", "Distance", "Duration", "Ascent", "Key"}
 	rows := make([][]string, 0, len(l.Items))
 	for _, w := range l.Items {
@@ -134,6 +142,14 @@ func (l WorkoutList) Pretty() string {
 			w.Key,
 		})
 	}
+	return headers, rows
+}
+
+// Pretty renders the workout page as a fixed-width table with an aggregate
+// footer (count, distance, time) so the human render is self-summarizing.
+// Empty list still emits a header row + footer so the output is recognisable.
+func (l WorkoutList) Pretty() string {
+	headers, rows := l.Table()
 	s := l.Summary()
 	footer := fmt.Sprintf("\n%d %s  %s  %s",
 		s.Count, pluralWorkout(s.Count), formatKm(s.TotalDistance), formatDuration(s.TotalTime))
@@ -237,6 +253,24 @@ type WorkoutStats struct {
 	AllStats                  []PerActivityStats `json:"allStats"`
 }
 
+// Table returns the per-activity breakdown as headers + rows. The aggregate
+// scalars (totalDistance/Time/Energy/Days) live on s and are surfaced by
+// Pretty() as a header block — they aren't part of the table.
+func (s WorkoutStats) Table() ([]string, [][]string) {
+	headers := []string{"Act", "Count", "Distance", "Duration", "Energy"}
+	rows := make([][]string, 0, len(s.AllStats))
+	for _, a := range s.AllStats {
+		rows = append(rows, []string{
+			fmt.Sprintf("%d", a.ActivityID),
+			fmt.Sprintf("%d", a.Count),
+			formatKm(a.Distance),
+			formatDuration(a.Duration),
+			fmt.Sprintf("%.0f kcal", a.Energy),
+		})
+	}
+	return headers, rows
+}
+
 // Pretty returns a multi-line summary of the aggregate stats, with per-activity
 // rows rendered as an aligned table.
 func (s WorkoutStats) Pretty() string {
@@ -247,18 +281,9 @@ func (s WorkoutStats) Pretty() string {
 	fmt.Fprintf(&sb, "energy:    %.0f kcal\n", s.TotalEnergyConsumptionSum)
 	fmt.Fprintf(&sb, "days:      %d", s.TotalDays)
 	if len(s.AllStats) > 0 {
-		rows := make([][]string, 0, len(s.AllStats))
-		for _, a := range s.AllStats {
-			rows = append(rows, []string{
-				fmt.Sprintf("%d", a.ActivityID),
-				fmt.Sprintf("%d", a.Count),
-				formatKm(a.Distance),
-				formatDuration(a.Duration),
-				fmt.Sprintf("%.0f kcal", a.Energy),
-			})
-		}
+		headers, rows := s.Table()
 		sb.WriteString("\n\nPer activity:\n")
-		sb.WriteString(renderTable([]string{"Act", "Count", "Distance", "Duration", "Energy"}, rows))
+		sb.WriteString(renderTable(headers, rows))
 	}
 	return sb.String()
 }
