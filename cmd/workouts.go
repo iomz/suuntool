@@ -595,6 +595,55 @@ With no --types, the full default set is requested (matches Android app behaviou
   suuntool workouts extensions wk_abc123 --types FitnessExtension,IntensityExtension`,
 }
 
+// workouts upload
+var (
+	flagUploadSML        string
+	flagUploadExtensions string
+)
+
+var workoutsUploadCmd = &cobra.Command{
+	Use:   "upload",
+	Short: "Upload an existing SML workout file (multipart)",
+	Long: `Upload a pre-built SML workout file to the server. The body is sent as
+multipart/form-data with parts:
+
+  filePart                — the SML XML (required, --sml)
+  workoutExtensionsPart   — optional extensions JSON (--extensions)
+
+This command does NOT generate SML from raw GPS/HR. Producing a valid SML
+container (with header, service header, legacy workout sections, delta-chain
+GPS encoding) is a non-trivial undertaking — see handoff/WORKOUT_BINARY_FORMAT.md
+for the format spec. Use a Suunto watch, an existing export, or a third-party
+tool to create the SML.
+
+On success the server returns the newly assigned workout (with polyline,
+recoveryTime, etc.). Save the 'key' if you need it for follow-up calls.
+
+(Picture and video uploads via PUT /v1/workouts/{key}/image and POST /v1/workouts/{key}/video are deferred to a future release.)`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if flagUploadSML == "" {
+			return &api.Error{Code: "USAGE", Message: "--sml <path> required", Exit: ExitUsage}
+		}
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		wkt, err := endpoints.UploadWorkout(ctx, c, flagUploadSML, flagUploadExtensions)
+		if err != nil {
+			return err
+		}
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Uploaded workout key=%s (%s)\n", wkt.Key, wkt.Username)
+		}
+		return emit(wkt)
+	},
+	Example: `  suuntool workouts upload --sml ./wk.sml
+  suuntool workouts upload --sml ./wk.sml --extensions ./ext.json
+  suuntool workouts upload --sml ./wk.sml --format json -o response.json`,
+}
+
 // workouts uncomment <comment-key>
 var workoutsUncommentCmd = &cobra.Command{
 	Use:   "uncomment <comment-key>",
@@ -640,10 +689,15 @@ func init() {
 	workoutsShareCmd.Flags().StringVar(&flagShareFormat, "as", "gpx-track", "Share format: gpx-route or gpx-track")
 	workoutsExtensionsCmd.Flags().StringSliceVar(&flagExtTypes, "types", nil, "Extension types to request (comma-separated; empty = full default set)")
 
+	workoutsUploadCmd.Flags().StringVar(&flagUploadSML, "sml", "", "Path to the SML file (required)")
+	workoutsUploadCmd.Flags().StringVar(&flagUploadExtensions, "extensions", "", "Path to optional extensions JSON")
+	_ = workoutsUploadCmd.MarkFlagRequired("sml")
+
 	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd,
 		workoutsCommentsCmd, workoutsCommentCmd, workoutsUncommentCmd,
 		workoutsReactCmd, workoutsUnreactCmd,
 		workoutsEditCmd, workoutsBatchUpdateCmd,
-		workoutsShareCmd, workoutsExtensionsCmd)
+		workoutsShareCmd, workoutsExtensionsCmd,
+		workoutsUploadCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }

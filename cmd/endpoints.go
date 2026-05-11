@@ -41,6 +41,7 @@ var endpointTable = []endpointRow{
 	{"workouts batch-update", "POST", "/v1/workouts/batchUpdate", true},
 	{"workouts share <key>", "PUT", "/v1/workouts/{username}/{key}/share/{format}", true},
 	{"workouts extensions <key>", "POST", "/v1/workout/extensions/{key}", true},
+	{"workouts upload", "POST", "/v1/workout", true},
 }
 
 var endpointsCmd = &cobra.Command{
