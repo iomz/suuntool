@@ -91,9 +91,9 @@ suuntool logout
 
 | Flag | Effect |
 |------|--------|
-| `--format auto` (default) | Pretty key/value on a TTY, JSON when piped or redirected |
+| `--format auto` (default) | Pretty on a TTY, JSON when piped or redirected |
 | `--format json` | Force JSON (2-space indent) |
-| `--format pretty` | Force pretty rendering |
+| `--format pretty` | Force pretty rendering — aligned tables for list responses (`workouts list`, `workouts stats`, `workouts comments`, `wellness sleep`); key/value blocks for single records |
 | `-o, --output <path>` | Write to a file instead of stdout — format inferred from extension |
 | `--no-color` | Disable ANSI styling (also honors `NO_COLOR`) |
 | `--quiet`, `--verbose` | Tune log verbosity on stderr |

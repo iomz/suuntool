@@ -87,7 +87,8 @@ func (l WorkoutList) Summary() WorkoutSummary {
 	return s
 }
 
-// Pretty returns a multi-line summary of the aggregate.
+// Pretty returns a multi-line summary of the aggregate, with the per-activity
+// breakdown rendered as an aligned table.
 func (s WorkoutSummary) Pretty() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "workouts:  %d\n", s.Count)
@@ -101,28 +102,52 @@ func (s WorkoutSummary) Pretty() string {
 			ids = append(ids, id)
 		}
 		sort.Ints(ids)
-		sb.WriteString("\nPer activity:")
+		rows := make([][]string, 0, len(ids))
 		for _, id := range ids {
 			a := s.ByActivity[id]
-			fmt.Fprintf(&sb, "\n  %d:  %dx  %s  %s",
-				a.ActivityID, a.Count, formatKm(a.Distance), formatDuration(a.Duration))
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", a.ActivityID),
+				fmt.Sprintf("%d", a.Count),
+				formatKm(a.Distance),
+				formatDuration(a.Duration),
+			})
 		}
+		sb.WriteString("\n\nPer activity:\n")
+		sb.WriteString(renderTable([]string{"Act", "Count", "Distance", "Duration"}, rows))
 	}
 	return sb.String()
 }
 
-// Pretty returns one line per workout and a footer with aggregate totals
-// (count, distance, time) so the human render is self-summarizing.
+// Pretty renders the workout page as a fixed-width table with an aggregate
+// footer (count, distance, time) so the human render is self-summarizing.
+// Empty list still emits a header row + footer so the output is recognisable.
 func (l WorkoutList) Pretty() string {
-	var sb strings.Builder
+	headers := []string{"Date", "Act", "Distance", "Duration", "Ascent", "Key"}
+	rows := make([][]string, 0, len(l.Items))
 	for _, w := range l.Items {
-		sb.WriteString(w.Pretty())
-		sb.WriteByte('\n')
+		rows = append(rows, []string{
+			time.Unix(0, w.StartTime*int64(time.Millisecond)).Local().Format("2006-01-02 15:04"),
+			fmt.Sprintf("%d", w.ActivityID),
+			fmt.Sprintf("%.2f km", w.TotalDistance/1000.0),
+			formatDuration(w.TotalTime),
+			fmt.Sprintf("%.0f m", w.TotalAscent),
+			w.Key,
+		})
 	}
 	s := l.Summary()
-	fmt.Fprintf(&sb, "%d workouts  %s  %s",
-		s.Count, formatKm(s.TotalDistance), formatDuration(s.TotalTime))
-	return sb.String()
+	footer := fmt.Sprintf("\n%d %s  %s  %s",
+		s.Count, pluralWorkout(s.Count), formatKm(s.TotalDistance), formatDuration(s.TotalTime))
+	if l.Until > 0 {
+		footer += fmt.Sprintf("  (until=%d)", l.Until)
+	}
+	return renderTable(headers, rows) + footer
+}
+
+func pluralWorkout(n int) string {
+	if n == 1 {
+		return "workout"
+	}
+	return "workouts"
 }
 
 // ListWorkoutsOpts controls pagination for ListWorkouts.
@@ -212,26 +237,30 @@ type WorkoutStats struct {
 	AllStats                  []PerActivityStats `json:"allStats"`
 }
 
-// Pretty returns a multi-line summary of the aggregate stats.
+// Pretty returns a multi-line summary of the aggregate stats, with per-activity
+// rows rendered as an aligned table.
 func (s WorkoutStats) Pretty() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "workouts:  %d\n", s.TotalNumberOfWorkoutsSum)
 	fmt.Fprintf(&sb, "distance:  %s\n", formatKm(s.TotalDistanceSum))
 	fmt.Fprintf(&sb, "time:      %s\n", formatDuration(s.TotalTimeSum))
 	fmt.Fprintf(&sb, "energy:    %.0f kcal\n", s.TotalEnergyConsumptionSum)
-	fmt.Fprintf(&sb, "days:      %d\n", s.TotalDays)
+	fmt.Fprintf(&sb, "days:      %d", s.TotalDays)
 	if len(s.AllStats) > 0 {
-		fmt.Fprintf(&sb, "Per activity:\n")
+		rows := make([][]string, 0, len(s.AllStats))
 		for _, a := range s.AllStats {
-			fmt.Fprintf(&sb, "  %d:  %dx  %s  %s  %.0f kcal\n",
-				a.ActivityID, a.Count,
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", a.ActivityID),
+				fmt.Sprintf("%d", a.Count),
 				formatKm(a.Distance),
 				formatDuration(a.Duration),
-				a.Energy,
-			)
+				fmt.Sprintf("%.0f kcal", a.Energy),
+			})
 		}
+		sb.WriteString("\n\nPer activity:\n")
+		sb.WriteString(renderTable([]string{"Act", "Count", "Distance", "Duration", "Energy"}, rows))
 	}
-	return strings.TrimRight(sb.String(), "\n")
+	return sb.String()
 }
 
 // Stats fetches /v1/workouts/{username}/stats. Empty username is rejected at the

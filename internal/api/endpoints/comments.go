@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/tajchert/suuntool/internal/api"
@@ -33,15 +32,36 @@ type CommentList struct {
 	Items []Comment `json:"items"`
 }
 
-// Pretty returns one line per comment plus a footer with count.
+// Pretty renders comments as an aligned table. Long comment bodies are
+// truncated to keep the layout sane; --format json carries the full text.
 func (l CommentList) Pretty() string {
-	var sb strings.Builder
+	headers := []string{"Time", "User", "Comment", "Key"}
+	rows := make([][]string, 0, len(l.Items))
 	for _, c := range l.Items {
-		sb.WriteString(c.Pretty())
-		sb.WriteByte('\n')
+		ts := time.Unix(0, c.Timestamp*int64(time.Millisecond)).Local().Format("2006-01-02 15:04")
+		username := c.Username
+		if username == "" {
+			username = "(unknown)"
+		}
+		rows = append(rows, []string{ts, username, truncate(c.Comment, 60), c.Key})
 	}
-	fmt.Fprintf(&sb, "(%d comments)", len(l.Items))
-	return sb.String()
+	noun := "comments"
+	if len(l.Items) == 1 {
+		noun = "comment"
+	}
+	return renderTable(headers, rows) + fmt.Sprintf("\n%d %s", len(l.Items), noun)
+}
+
+// truncate shortens s to at most n runes, appending "…" if it was cut.
+func truncate(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n-1]) + "…"
 }
 
 // ListComments fetches /v1/workouts/comments/{workoutKey}.
