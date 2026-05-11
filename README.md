@@ -57,5 +57,5 @@ suuntool logout
 
 ## For agents
 
-`suuntool help endpoints --format json` prints a stable `command → method+path`
+`suuntool endpoints --format json` prints a stable `command → method+path`
 table — use it to map intents to commands without scraping help text.
