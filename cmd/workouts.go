@@ -98,6 +98,7 @@ var (
 	workoutsListSince   string
 	workoutsListOffset  int
 	workoutsListSummary bool
+	workoutsListStream  bool
 )
 
 var workoutsListCmd = &cobra.Command{
@@ -110,15 +111,24 @@ automatically fetches subsequent pages using the server-returned cursor.
 Pretty output always ends with a totals line (count, distance, time). Pass
 --summary to replace the per-workout rows with an aggregate (count, distance,
 time, ascent, descent, plus a per-activity breakdown). In JSON mode --summary
-emits the summary object instead of the items array.`,
+emits the summary object instead of the items array.
+
+Pass --stream to emit NDJSON (one workout per line) and auto-paginate across
+every 'until' cursor until the server runs out. Combine with --since to bound
+the window; --limit becomes a cap (0 = unbounded, no 100 ceiling). Writes to
+stdout or, with -o, to a file. Mutually exclusive with --summary.`,
 	Example: `  suuntool workouts list --limit 5
   suuntool workouts list --since 7d
   suuntool workouts list --since last-month --format json
   suuntool workouts list --since 2026-01-01 -o workouts.json
-  suuntool workouts list --limit 100 --summary`,
+  suuntool workouts list --limit 100 --summary
+  suuntool workouts list --since 2025-01-01 --stream > 2025.ndjson`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if workoutsListLimit > 100 {
-			return fmt.Errorf("--limit must be <= 100 (server maximum per page); got %d", workoutsListLimit)
+		if workoutsListStream && workoutsListSummary {
+			return &api.Error{Code: "USAGE", Message: "--stream and --summary are mutually exclusive", Exit: ExitUsage}
+		}
+		if !workoutsListStream && workoutsListLimit > 100 {
+			return fmt.Errorf("--limit must be <= 100 (server maximum per page); got %d (use --stream to auto-paginate)", workoutsListLimit)
 		}
 		c, _, err := authedClient()
 		if err != nil {
@@ -130,6 +140,14 @@ emits the summary object instead of the items array.`,
 		since, err := parseSince(workoutsListSince)
 		if err != nil {
 			return err
+		}
+
+		if workoutsListStream {
+			cap := 0
+			if cmd.Flags().Changed("limit") {
+				cap = workoutsListLimit
+			}
+			return streamWorkouts(ctx, c, since, workoutsListOffset, cap)
 		}
 
 		limit := workoutsListLimit
@@ -182,6 +200,51 @@ emits the summary object instead of the items array.`,
 		}
 		return emit(list)
 	},
+}
+
+// streamWorkouts emits one workout per line as JSON (NDJSON) to stdout or
+// -o file, auto-paginating across 'until' cursors. cap=0 means unbounded.
+func streamWorkouts(ctx context.Context, c *api.Client, since int64, offset, cap int) error {
+	var w io.Writer = os.Stdout
+	if flagOutput != "" {
+		f, err := os.Create(flagOutput)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		w = f
+	}
+	enc := json.NewEncoder(w)
+
+	curSince := since
+	curOffset := offset
+	emitted := 0
+	const pageSize = 100
+
+	for {
+		page, err := endpoints.ListWorkouts(ctx, c, endpoints.ListWorkoutsOpts{
+			Since:  curSince,
+			Limit:  pageSize,
+			Offset: curOffset,
+		})
+		if err != nil {
+			return err
+		}
+		for i := range page.Items {
+			if err := enc.Encode(page.Items[i]); err != nil {
+				return err
+			}
+			emitted++
+			if cap > 0 && emitted >= cap {
+				return nil
+			}
+		}
+		if len(page.Items) < pageSize {
+			return nil
+		}
+		curSince = page.Until
+		curOffset = 0
+	}
 }
 
 var workoutsGetCmd = &cobra.Command{
@@ -990,6 +1053,7 @@ func init() {
 	workoutsListCmd.Flags().StringVar(&workoutsListSince, "since", "", "Only fetch workouts after this time (unix ms, RFC3339, YYYY-MM-DD, duration like 7d/2h, or keyword: today/yesterday/last-week/last-month/last-year)")
 	workoutsListCmd.Flags().IntVar(&workoutsListOffset, "offset", 0, "Page offset for first request")
 	workoutsListCmd.Flags().BoolVar(&workoutsListSummary, "summary", false, "Aggregate the fetched workouts into totals (distance/time/ascent + per-activity) instead of listing items")
+	workoutsListCmd.Flags().BoolVar(&workoutsListStream, "stream", false, "Emit NDJSON (one workout per line) and auto-paginate across all 'until' cursors; --limit becomes optional cap (0=unbounded)")
 
 	workoutsCountCmd.Flags().StringVar(&workoutsCountUntil, "until", "", "Upper bound timestamp (unix ms, RFC3339, YYYY-MM-DD, duration like 7d, or keyword; default = now)")
 	workoutsCountCmd.Flags().IntVar(&workoutsCountSharingFlags, "sharing-flags", 0, "Sharing flags filter (server-required param)")
