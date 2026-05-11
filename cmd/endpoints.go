@@ -32,6 +32,9 @@ var endpointTable = []endpointRow{
 	{"partner-connections", "GET", "/v1/partnerconnection", true},
 	{"gear list", "GET", "/v1/gear", true},
 	{"maps library", "GET", "/v1/maps/library", true},
+	{"workouts comments <key>", "GET", "/v1/workouts/comments/{key}", true},
+	{"workouts comment <key> [text]", "POST", "/v1/workouts/comment/{key}", true},
+	{"workouts uncomment <comment-key>", "DELETE", "/v1/workouts/comment/{commentKey}", true},
 }
 
 var endpointsCmd = &cobra.Command{

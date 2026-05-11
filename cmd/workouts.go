@@ -3,11 +3,15 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/tajchert/suuntool/internal/api"
 	"github.com/tajchert/suuntool/internal/api/endpoints"
 	"github.com/tajchert/suuntool/internal/auth"
 	"github.com/tajchert/suuntool/internal/output"
@@ -269,6 +273,98 @@ Returns a binary .fit file. Use -o to save; piping to stdout is binary-unsafe on
 	},
 }
 
+// workouts comments <key>
+var workoutsCommentsCmd = &cobra.Command{
+	Use:   "comments <key>",
+	Short: "List comments on a workout",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		list, err := endpoints.ListComments(ctx, c, args[0])
+		if err != nil {
+			return err
+		}
+		return emit(list)
+	},
+	Example: `  suuntool workouts comments wk_abc123
+  suuntool workouts comments wk_abc123 --format json`,
+}
+
+// workouts comment <key> [text]
+var flagCommentStdin bool
+
+var workoutsCommentCmd = &cobra.Command{
+	Use:   "comment <key> [text]",
+	Short: "Post a comment on a workout (requires x-totp)",
+	Long: `Post a comment on a workout. The comment body is sent as text/plain.
+
+Requires an x-totp header (auto-generated from the session).
+Quotas are conservative — don't batch-spam comments.`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		key := args[0]
+		var text string
+		switch {
+		case flagCommentStdin:
+			b, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return err
+			}
+			text = strings.TrimRight(string(b), "\r\n")
+		case len(args) == 2:
+			text = args[1]
+		default:
+			return &api.Error{Code: "USAGE", Message: "comment text required (pass as arg or use --stdin)", Exit: ExitUsage}
+		}
+		if strings.TrimSpace(text) == "" {
+			return &api.Error{Code: "USAGE", Message: "refusing to post empty comment", Exit: ExitUsage}
+		}
+		c, sess, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		raw, err := endpoints.PostComment(ctx, c, key, text, totpHeaders(sess))
+		if err != nil {
+			return err
+		}
+		return emit(raw)
+	},
+	Example: `  suuntool workouts comment wk_abc123 "great run"
+  echo "multi-line\nrun report" | suuntool workouts comment wk_abc123 --stdin`,
+}
+
+// workouts uncomment <comment-key>
+var workoutsUncommentCmd = &cobra.Command{
+	Use:   "uncomment <comment-key>",
+	Short: "Delete a comment (by comment key, not workout key)",
+	Long: `Delete a comment. NOTE: the argument is the comment key (returned by
+'workouts comments <workout-key>'), NOT the workout key.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		if err := endpoints.DeleteComment(ctx, c, args[0]); err != nil {
+			return err
+		}
+		if !flagQuiet {
+			fmt.Fprintln(os.Stderr, "Deleted comment", args[0])
+		}
+		return nil
+	},
+	Example: `  suuntool workouts uncomment c_xyz789`,
+}
+
 func init() {
 	workoutsListCmd.Flags().IntVar(&workoutsListLimit, "limit", 20, "Number of workouts to fetch (max 100 per server page)")
 	workoutsListCmd.Flags().StringVar(&workoutsListSince, "since", "", "Only fetch workouts after this time (RFC3339 or unix ms)")
@@ -277,6 +373,9 @@ func init() {
 	workoutsCountCmd.Flags().StringVar(&workoutsCountUntil, "until", "", "Upper bound timestamp (RFC3339 or unix ms; default = now)")
 	workoutsCountCmd.Flags().IntVar(&workoutsCountSharingFlags, "sharing-flags", 0, "Sharing flags filter (server-required param)")
 
-	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd)
+	workoutsCommentCmd.Flags().BoolVar(&flagCommentStdin, "stdin", false, "Read comment text from stdin (for multi-line or piped input)")
+
+	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd,
+		workoutsCommentsCmd, workoutsCommentCmd, workoutsUncommentCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }
