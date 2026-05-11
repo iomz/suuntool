@@ -525,6 +525,76 @@ Example entries file:
   cat edits.json | suuntool workouts batch-update`,
 }
 
+// workouts share <key>
+var flagShareFormat string
+
+var workoutsShareCmd = &cobra.Command{
+	Use:   "share <key>",
+	Short: "Get a signed GPX share URL for a workout",
+	Long: `Generate a signed GPX share URL. Format must be 'gpx-route' or 'gpx-track'.
+Sends header Brand: suuntoapp as required by the server.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var format endpoints.ShareFormat
+		switch flagShareFormat {
+		case string(endpoints.ShareGPXRoute):
+			format = endpoints.ShareGPXRoute
+		case string(endpoints.ShareGPXTrack):
+			format = endpoints.ShareGPXTrack
+		default:
+			return &api.Error{Code: "USAGE", Message: "--as must be gpx-route or gpx-track", Exit: ExitUsage}
+		}
+		c, sess, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		url, err := endpoints.ShareWorkout(ctx, c, sess.Username, args[0], format)
+		if err != nil {
+			return err
+		}
+		return emit(shareResult{URL: url})
+	},
+	Example: `  suuntool workouts share wk_abc123 --as gpx-track
+  suuntool workouts share wk_abc123 --as gpx-route --format json`,
+}
+
+type shareResult struct {
+	URL string `json:"url"`
+}
+
+func (s shareResult) Pretty() string { return s.URL }
+
+// workouts extensions <key>
+var flagExtTypes []string
+
+var workoutsExtensionsCmd = &cobra.Command{
+	Use:   "extensions <key>",
+	Short: "Fetch workout extensions (Fitness/Intensity/Ski/…)",
+	Long: `Fetches extensions for a workout via POST /v1/workout/extensions/{key}.
+Despite the verb, this is a read — the body is the *filter* list of extension
+types you want. Server returns whatever the workout actually has from that list.
+
+With no --types, the full default set is requested (matches Android app behaviour).`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		raw, err := endpoints.FetchExtensions(ctx, c, args[0], flagExtTypes)
+		if err != nil {
+			return err
+		}
+		return emit(raw)
+	},
+	Example: `  suuntool workouts extensions wk_abc123
+  suuntool workouts extensions wk_abc123 --types FitnessExtension,IntensityExtension`,
+}
+
 // workouts uncomment <comment-key>
 var workoutsUncommentCmd = &cobra.Command{
 	Use:   "uncomment <comment-key>",
@@ -567,9 +637,13 @@ func init() {
 
 	workoutsBatchUpdateCmd.Flags().StringVar(&flagBatchFile, "file", "", "Path to JSON array of update entries (default: stdin)")
 
+	workoutsShareCmd.Flags().StringVar(&flagShareFormat, "as", "gpx-track", "Share format: gpx-route or gpx-track")
+	workoutsExtensionsCmd.Flags().StringSliceVar(&flagExtTypes, "types", nil, "Extension types to request (comma-separated; empty = full default set)")
+
 	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd,
 		workoutsCommentsCmd, workoutsCommentCmd, workoutsUncommentCmd,
 		workoutsReactCmd, workoutsUnreactCmd,
-		workoutsEditCmd, workoutsBatchUpdateCmd)
+		workoutsEditCmd, workoutsBatchUpdateCmd,
+		workoutsShareCmd, workoutsExtensionsCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }
