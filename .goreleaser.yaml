@@ -1,0 +1,90 @@
+# GoReleaser config for suuntool.
+# Docs: https://goreleaser.com
+version: 2
+
+project_name: suuntool
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: suuntool
+    main: ./
+    binary: suuntool
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/tajchert/suuntool/cmd.Version={{ .Version }}
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats:
+      - tar.gz
+    files:
+      - README.md
+      - LICENSE
+      - CONTRIBUTING.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  use: git
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:.*$"
+      order: 0
+    - title: Fixes
+      regexp: "^.*fix[(\\w)]*:.*$"
+      order: 1
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: tajchert
+    name: suuntool
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+  header: |
+    ## suuntool v{{ .Version }}
+
+    Unofficial Go CLI for the Suunto / Sports-Tracker API.
+    See [README](https://github.com/tajchert/suuntool#readme) for usage and disclaimers.
+
+    > ⚠️ Unofficial, experimental, not affiliated with Suunto. May violate Suunto's TOS — use at your own risk.
+  footer: |
+    ---
+    **Install (Homebrew, once the tap formula is published):**
+    ```bash
+    brew install tajchert/tap/suuntool
+    ```
+
+    **Install (Go):**
+    ```bash
+    go install github.com/tajchert/suuntool@v{{ .Version }}
+    ```
