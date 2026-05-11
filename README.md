@@ -64,7 +64,8 @@ suuntool workouts sml wk_abc123 -o wk.sml.json      # full ~5MB sample data
 suuntool workouts fit wk_abc123 -o wk.fit           # binary .fit export
 
 # 24/7 wellness (gzipped NDJSON, decoded on the fly)
-suuntool wellness sleep      --since 0 -o sleep.ndjson
+suuntool wellness sleep                             # pretty table on TTY, raw NDJSON when piped
+suuntool wellness sleep --since 0 -o sleep.ndjson   # raw NDJSON to file
 suuntool wellness activity   --since 0 | jq '.entryData.stepCount'
 suuntool wellness recovery   --out ./wellness
 suuntool wellness sleepstages --out ./wellness
@@ -78,11 +79,6 @@ suuntool workouts share wk_abc123 --as gpx-track    # signed GPX URL
 suuntool workouts extensions wk_abc123              # Fitness/Intensity/…
 suuntool workouts upload --sml ./wk.sml             # multipart upload
 suuntool workouts delete wk_abc123 --yes            # destructive — needs --yes off-TTY
-
-# Other reads
-suuntool partner-connections                        # Strava/TrainingPeaks/… links
-suuntool gear list                                  # paired gear
-suuntool maps library --device-serial SN123         # offline-map regions
 
 suuntool doctor                                     # connectivity + session check
 suuntool logout
@@ -142,7 +138,7 @@ NO_COLOR=1 suuntool whoami                          # plain-text TTY
 
 | Command | Endpoint | Auth | Notes |
 |---------|----------|------|-------|
-| `wellness sleep` | `GET 247.../v1/sleep/export` | yes | NDJSON; `--since <ms>`, `--out <dir>` |
+| `wellness sleep` | `GET 247.../v1/sleep/export` | yes | **Pretty table on TTY** (dedup'd by `sleepId`, units converted: Hz→BPM, fractions→%); raw NDJSON when piped or with `-o`/`--out` |
 | `wellness activity` | `GET 247.../v1/activity/export` | yes | Per-15-min `hr`/`steps`/`energy`. **`hr` is in Hz** — ×60 for BPM |
 | `wellness recovery` | `GET 247.../v1/recovery/export` | yes | `balance` ∈ 0..1 = "wake-up resources" |
 | `wellness sleepstages` | `GET 247.../v1/sleepstages/export` | yes | Stage timeline (light/deep/REM/…) |
@@ -170,14 +166,6 @@ These mutate server state. The `delete` command requires `--yes` in non-TTY cont
 > **`--yes` and destructive operations.** `workouts delete` refuses to run on a non-TTY without `--yes` (exit code 2). This prevents agents and CI scripts from accidentally bypassing the confirmation by piping nothing into stdin.
 >
 > **Rate limiting.** Suunto's quotas are conservative (a few QPS). Don't batch-spam comments or reactions — your account can be flagged.
-
-### Other reads
-
-| Command | Endpoint | Auth | Notes |
-|---------|----------|------|-------|
-| `partner-connections` | `GET /v1/partnerconnection` | yes | Linked OAuth partners (Strava, TrainingPeaks, …) |
-| `gear list` | `GET /v1/gear` | yes | Gear paired to the account |
-| `maps library --device-serial <sn>` | `GET /v1/maps/library` | yes | Offline-map regions. Serial is `Source: "suunto-<sn>"` in `/sml` data |
 
 ### Discovery / meta
 
