@@ -1,0 +1,33 @@
+package cmd
+
+import (
+	"github.com/spf13/cobra"
+)
+
+type endpointRow struct {
+	Command    string `json:"command"`
+	Method     string `json:"method"`
+	Path       string `json:"path"`
+	AuthNeeded bool   `json:"authNeeded"`
+}
+
+var endpointTable = []endpointRow{
+	{"login", "POST", "/v1/login2", false},
+	{"logout", "GET", "/v1/logout", true},
+	{"whoami", "GET", "/v1/user", true},
+	{"profile settings", "GET", "/v1/user/settings", true},
+	{"profile follow", "GET", "/v1/user/follow", true},
+	{"profile user <username>", "GET", "/v1/user/name/{username}", true},
+	{"doctor", "GET", "/v1/servertime", false},
+}
+
+var endpointsCmd = &cobra.Command{
+	Use:    "endpoints",
+	Short:  "Print the command→endpoint mapping (machine-readable with --format=json)",
+	Hidden: true, // discoverable via `suuntool help endpoints`
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return emit(endpointTable)
+	},
+}
+
+func init() { rootCmd.AddCommand(endpointsCmd) }
