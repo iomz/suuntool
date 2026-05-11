@@ -167,7 +167,7 @@ func readRegistrars() []toolRegistrar {
 		func(s *sdkmcp.Server, d *deps) {
 			sdkmcp.AddTool(s, &sdkmcp.Tool{
 				Name:        "workouts_list",
-				Description: "List workouts (GET /v1/workouts). Paginated by since/limit/offset.",
+				Description: "List workouts (GET /v1/workouts). Paginated by since/limit/offset. Each item is enriched with activityName alongside the numeric activityId.",
 			}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args workoutsListArgs) (*sdkmcp.CallToolResult, any, error) {
 				if e := authGate(d); e != nil {
 					return e, nil, nil
@@ -178,7 +178,7 @@ func readRegistrars() []toolRegistrar {
 				if err != nil {
 					return mapErrorToCallToolResult(err), nil, nil
 				}
-				return nil, v, nil
+				return nil, enrichWorkoutList(v), nil
 			})
 		},
 
@@ -186,7 +186,7 @@ func readRegistrars() []toolRegistrar {
 		func(s *sdkmcp.Server, d *deps) {
 			sdkmcp.AddTool(s, &sdkmcp.Tool{
 				Name:        "workouts_get",
-				Description: "Fetch a single workout summary by key (GET /v1/workouts/{key}).",
+				Description: "Fetch a single workout summary by key (GET /v1/workouts/{key}). Response includes activityName alongside the numeric activityId.",
 			}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args workoutKeyArgs) (*sdkmcp.CallToolResult, any, error) {
 				if e := authGate(d); e != nil {
 					return e, nil, nil
@@ -195,7 +195,11 @@ func readRegistrars() []toolRegistrar {
 				if err != nil {
 					return mapErrorToCallToolResult(err), nil, nil
 				}
-				return nil, v, nil
+				if v == nil {
+					return nil, nil, nil
+				}
+				enriched := enrichWorkout(*v)
+				return nil, enriched, nil
 			})
 		},
 
@@ -220,7 +224,7 @@ func readRegistrars() []toolRegistrar {
 		func(s *sdkmcp.Server, d *deps) {
 			sdkmcp.AddTool(s, &sdkmcp.Tool{
 				Name:        "workouts_stats",
-				Description: "Per-activity totals for a user (GET /v1/workouts/{username}/stats). Empty username defaults to the authenticated user.",
+				Description: "Per-activity totals for a user (GET /v1/workouts/{username}/stats). Empty username defaults to the authenticated user. Each allStats entry is enriched with activityName.",
 			}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args workoutsStatsArgs) (*sdkmcp.CallToolResult, any, error) {
 				if e := authGate(d); e != nil {
 					return e, nil, nil
@@ -236,7 +240,7 @@ func readRegistrars() []toolRegistrar {
 				if err != nil {
 					return mapErrorToCallToolResult(err), nil, nil
 				}
-				return nil, v, nil
+				return nil, enrichWorkoutStats(v), nil
 			})
 		},
 
@@ -309,6 +313,9 @@ func readRegistrars() []toolRegistrar {
 		makeWellnessTool("wellness_recovery", "Stream 24/7 recovery entries as JSON objects (GET /v1/recovery/export).", endpoints.StreamRecovery),
 		// wellness_sleepstages
 		makeWellnessTool("wellness_sleepstages", "Stream 24/7 sleep-stages entries as JSON objects (GET /v1/sleepstages/export).", endpoints.StreamSleepStages),
+
+		// activity_type_name (unauthed lookup; uses the embedded ActivityType table)
+		registerActivityNameTool,
 	}
 }
 

@@ -166,7 +166,17 @@ func TestTool_WorkoutsList(t *testing.T) {
 	}))
 	defer srv.Close()
 	cs := startTestServer(t, srv.URL+"/v1/", "", authSession())
-	mustOK(t, callTool(t, cs, "workouts_list", map[string]any{"limit": 10}))
+	res := callTool(t, cs, "workouts_list", map[string]any{"limit": 10})
+	mustOK(t, res)
+	sc := res.StructuredContent.(map[string]any)
+	items := sc["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	first := items[0].(map[string]any)
+	if first["activityName"] != "RUNNING" {
+		t.Fatalf("expected activityName=RUNNING, got %v", first["activityName"])
+	}
 }
 
 func TestTool_WorkoutsGet(t *testing.T) {
@@ -175,7 +185,12 @@ func TestTool_WorkoutsGet(t *testing.T) {
 	})
 	defer srv.Close()
 	cs := startTestServer(t, srv.URL+"/v1/", "", authSession())
-	mustOK(t, callTool(t, cs, "workouts_get", map[string]any{"key": "w1"}))
+	res := callTool(t, cs, "workouts_get", map[string]any{"key": "w1"})
+	mustOK(t, res)
+	sc := res.StructuredContent.(map[string]any)
+	if sc["activityName"] != "RUNNING" {
+		t.Fatalf("expected activityName=RUNNING, got %v", sc["activityName"])
+	}
 }
 
 func TestTool_WorkoutsCount(t *testing.T) {
@@ -192,11 +207,38 @@ func TestTool_WorkoutsCount(t *testing.T) {
 
 func TestTool_WorkoutsStats(t *testing.T) {
 	srv := newSuuntoStub(t, map[string]string{
-		"/v1/workouts/alice/stats": `{"payload":{"totalDistanceSum":1000,"totalTimeSum":600,"totalEnergyConsumptionSum":500,"totalNumberOfWorkoutsSum":3,"totalDays":1,"allStats":[]},"error":null,"metadata":null}`,
+		"/v1/workouts/alice/stats": `{"payload":{"totalDistanceSum":1000,"totalTimeSum":600,"totalEnergyConsumptionSum":500,"totalNumberOfWorkoutsSum":3,"totalDays":1,"allStats":[{"activityId":2,"count":3,"distance":1000,"duration":600,"energy":500}]},"error":null,"metadata":null}`,
 	})
 	defer srv.Close()
 	cs := startTestServer(t, srv.URL+"/v1/", "", authSession())
-	mustOK(t, callTool(t, cs, "workouts_stats", nil))
+	res := callTool(t, cs, "workouts_stats", nil)
+	mustOK(t, res)
+	sc := res.StructuredContent.(map[string]any)
+	all := sc["allStats"].([]any)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 allStats entry, got %d", len(all))
+	}
+	first := all[0].(map[string]any)
+	if first["activityName"] != "CYCLING" {
+		t.Fatalf("expected activityName=CYCLING, got %v", first["activityName"])
+	}
+}
+
+func TestTool_ActivityTypeName(t *testing.T) {
+	cs := startTestServer(t, "http://unused/", "", authSession())
+	res := callTool(t, cs, "activity_type_name", map[string]any{"id": 22})
+	mustOK(t, res)
+	sc := res.StructuredContent.(map[string]any)
+	if sc["name"] != "TRAIL_RUNNING" {
+		t.Fatalf("expected name=TRAIL_RUNNING, got %v", sc["name"])
+	}
+	// Unknown id falls back to act=<id>.
+	res = callTool(t, cs, "activity_type_name", map[string]any{"id": 9999})
+	mustOK(t, res)
+	sc = res.StructuredContent.(map[string]any)
+	if sc["name"] != "act=9999" {
+		t.Fatalf("expected fallback act=9999, got %v", sc["name"])
+	}
 }
 
 func TestTool_WorkoutsSML(t *testing.T) {
