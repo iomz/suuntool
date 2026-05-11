@@ -169,3 +169,14 @@ func TestCountWorkouts_RequiresBothParams(t *testing.T) {
 	assert.True(t, strings.Contains(capturedQuery, "until="), "query should contain until= param, got: %s", capturedQuery)
 	assert.True(t, strings.Contains(capturedQuery, "sharingFlags="), "query should contain sharingFlags= param, got: %s", capturedQuery)
 }
+
+func TestDeleteWorkout_TrailingDeletePath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "DELETE", r.Method)
+		require.Equal(t, "/v1/workouts/wk1/delete", r.URL.Path)
+		_, _ = w.Write([]byte(`{"error":null,"payload":true}`))
+	}))
+	defer srv.Close()
+	c := api.NewClient(srv.URL+"/v1/", "SK", 0)
+	require.NoError(t, endpoints.DeleteWorkout(context.Background(), c, "wk1"))
+}

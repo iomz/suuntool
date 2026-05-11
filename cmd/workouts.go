@@ -644,6 +644,50 @@ recoveryTime, etc.). Save the 'key' if you need it for follow-up calls.
   suuntool workouts upload --sml ./wk.sml --format json -o response.json`,
 }
 
+// workouts delete <key>
+var flagDeleteYes bool
+
+var workoutsDeleteCmd = &cobra.Command{
+	Use:   "delete <key>",
+	Short: "Permanently delete a workout (destructive)",
+	Long: `Permanently delete a workout. THIS CANNOT BE UNDONE.
+
+By default, asks for interactive confirmation on a TTY. In non-TTY contexts
+(scripts, agents, CI) you MUST pass --yes; otherwise the command exits with
+code 2 (USAGE) without making any HTTP call.
+
+Server endpoint: DELETE /v1/workouts/{key}/delete  (note trailing /delete).`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		key := args[0]
+		ok, err := confirm("Really delete workout "+key+"? This cannot be undone.", flagDeleteYes)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			if !flagQuiet {
+				fmt.Fprintln(os.Stderr, "Aborted.")
+			}
+			return nil
+		}
+		c, _, err := authedClient()
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
+		defer cancel()
+		if err := endpoints.DeleteWorkout(ctx, c, key); err != nil {
+			return err
+		}
+		if !flagQuiet {
+			fmt.Fprintln(os.Stderr, "Deleted workout", key)
+		}
+		return nil
+	},
+	Example: `  suuntool workouts delete wk_abc123          # interactive prompt on TTY
+  suuntool workouts delete wk_abc123 --yes    # non-interactive (scripts/agents)`,
+}
+
 // workouts uncomment <comment-key>
 var workoutsUncommentCmd = &cobra.Command{
 	Use:   "uncomment <comment-key>",
@@ -693,11 +737,13 @@ func init() {
 	workoutsUploadCmd.Flags().StringVar(&flagUploadExtensions, "extensions", "", "Path to optional extensions JSON")
 	_ = workoutsUploadCmd.MarkFlagRequired("sml")
 
+	workoutsDeleteCmd.Flags().BoolVar(&flagDeleteYes, "yes", false, "Skip the confirmation prompt (required for non-TTY)")
+
 	workoutsCmd.AddCommand(workoutsListCmd, workoutsGetCmd, workoutsCountCmd, workoutsStatsCmd, workoutsSMLCmd, workoutsFITCmd,
 		workoutsCommentsCmd, workoutsCommentCmd, workoutsUncommentCmd,
 		workoutsReactCmd, workoutsUnreactCmd,
 		workoutsEditCmd, workoutsBatchUpdateCmd,
 		workoutsShareCmd, workoutsExtensionsCmd,
-		workoutsUploadCmd)
+		workoutsUploadCmd, workoutsDeleteCmd)
 	rootCmd.AddCommand(workoutsCmd)
 }

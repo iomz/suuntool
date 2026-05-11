@@ -42,6 +42,7 @@ var endpointTable = []endpointRow{
 	{"workouts share <key>", "PUT", "/v1/workouts/{username}/{key}/share/{format}", true},
 	{"workouts extensions <key>", "POST", "/v1/workout/extensions/{key}", true},
 	{"workouts upload", "POST", "/v1/workout", true},
+	{"workouts delete <key>", "DELETE", "/v1/workouts/{key}/delete", true},
 }
 
 var endpointsCmd = &cobra.Command{

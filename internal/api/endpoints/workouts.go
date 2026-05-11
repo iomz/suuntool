@@ -218,3 +218,10 @@ func CountWorkouts(ctx context.Context, c *api.Client, untilMS int64, sharingFla
 	}
 	return &wc, nil
 }
+
+// DeleteWorkout permanently removes a workout. Returns nil on success.
+// Note the path has a trailing /delete (not just /workouts/{key}) — see handoff §6.4.
+func DeleteWorkout(ctx context.Context, c *api.Client, workoutKey string) error {
+	_, err := c.Do(ctx, "DELETE", "workouts/"+workoutKey+"/delete", nil, nil)
+	return err
+}
