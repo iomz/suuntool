@@ -255,6 +255,79 @@ func TestTool_WorkoutsSML(t *testing.T) {
 	}
 }
 
+func TestTool_WorkoutsSML_Filtered(t *testing.T) {
+	// Three samples: one with HR+Power, one with HR only, one metadata-only
+	// (no inner Sample). Filtering on streams=[Power] keeps just the first.
+	body := `{
+	  "Data": {"Samples": [
+	    {"TimeISO8601": "2026-05-09T11:08:01Z",
+	     "Attributes": {"suunto/sml": {"Sample": {"HR": 140, "Power": 220, "Cadence": 90}}}},
+	    {"TimeISO8601": "2026-05-09T11:08:02Z",
+	     "Attributes": {"suunto/sml": {"Sample": {"HR": 142}}}},
+	    {"TimeISO8601": "2026-05-09T11:08:03Z",
+	     "Source": "suunto-xxx"}
+	  ]},
+	  "Summary": {"foo": "bar"}
+	}`
+	srv := newSuuntoStub(t, map[string]string{"/v1/workouts/w1/sml": body})
+	defer srv.Close()
+	cs := startTestServer(t, srv.URL+"/v1/", "", authSession())
+
+	res := callTool(t, cs, "workouts_sml", map[string]any{
+		"key":             "w1",
+		"streams":         []string{"Power"},
+		"include_summary": true,
+	})
+	mustOK(t, res)
+	sc := res.StructuredContent.(map[string]any)
+	if _, hasB64 := sc["base64"]; hasB64 {
+		t.Fatal("filtered response must not include base64")
+	}
+	if got, want := sc["sample_count"], float64(1); got != want {
+		t.Fatalf("sample_count=%v, want %v", got, want)
+	}
+	samples, _ := sc["samples"].([]any)
+	if len(samples) != 1 {
+		t.Fatalf("samples len=%d, want 1", len(samples))
+	}
+	first := samples[0].(map[string]any)
+	if first["Power"].(float64) != 220 {
+		t.Fatalf("first.Power=%v, want 220", first["Power"])
+	}
+	if _, hasHR := first["HR"]; hasHR {
+		t.Fatal("HR should be pruned when streams=[Power]")
+	}
+	if first["TimeISO8601"] != "2026-05-09T11:08:01Z" {
+		t.Fatalf("TimeISO8601=%v", first["TimeISO8601"])
+	}
+	if sc["summary"] == nil {
+		t.Fatal("expected summary when include_summary=true")
+	}
+}
+
+func TestTool_WorkoutsSML_Downsample(t *testing.T) {
+	body := `{"Data": {"Samples": [
+	  {"Attributes": {"suunto/sml": {"Sample": {"HR": 1}}}},
+	  {"Attributes": {"suunto/sml": {"Sample": {"HR": 2}}}},
+	  {"Attributes": {"suunto/sml": {"Sample": {"HR": 3}}}},
+	  {"Attributes": {"suunto/sml": {"Sample": {"HR": 4}}}}
+	]}}`
+	srv := newSuuntoStub(t, map[string]string{"/v1/workouts/w1/sml": body})
+	defer srv.Close()
+	cs := startTestServer(t, srv.URL+"/v1/", "", authSession())
+
+	res := callTool(t, cs, "workouts_sml", map[string]any{
+		"key":        "w1",
+		"streams":    []string{"HR"},
+		"downsample": 2,
+	})
+	mustOK(t, res)
+	sc := res.StructuredContent.(map[string]any)
+	if got := sc["sample_count"].(float64); got != 2 {
+		t.Fatalf("sample_count=%v, want 2 (every other of 4)", got)
+	}
+}
+
 func TestTool_WorkoutsFIT(t *testing.T) {
 	srv := newSuuntoStub(t, map[string]string{
 		"/v1/workout/exportFit/w1": "BINARYFITDATA",

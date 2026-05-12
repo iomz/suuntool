@@ -33,6 +33,17 @@ type workoutKeyArgs struct {
 	Key string `json:"key" jsonschema:"the workout key (e.g. 6634ab12cd34ef5678901234)"`
 }
 
+// workoutsSMLArgs controls the streams/downsample filter for workouts_sml.
+// When Streams or Downsample is set, the tool returns filtered structured JSON
+// instead of the raw base64 blob — strongly recommended because the unfiltered
+// SML is typically several MB and exceeds the MCP 1 MB response cap.
+type workoutsSMLArgs struct {
+	Key            string   `json:"key" jsonschema:"the workout key (e.g. 6634ab12cd34ef5678901234)"`
+	Streams        []string `json:"streams,omitempty" jsonschema:"sample inner-field names to keep, e.g. ['HR','Power','Cadence','GPSAltitude','Latitude','Longitude','UTC']. Samples that don't contain any requested field are dropped. Empty = no filter (returns base64 of the full blob)."`
+	Downsample     int      `json:"downsample,omitempty" jsonschema:"keep every Nth sample (1 or 0 = no downsampling). Applied after the streams filter."`
+	IncludeSummary bool     `json:"include_summary,omitempty" jsonschema:"include the Summary block alongside filtered samples. Only meaningful when streams or downsample is set. Default false to save tokens."`
+}
+
 type workoutsCountArgs struct {
 	UntilMS      int64 `json:"until_ms,omitempty" jsonschema:"upper bound timestamp (unix ms); 0 means now"`
 	SharingFlags int   `json:"sharing_flags,omitempty" jsonschema:"sharing-flag bitmask required by the server (use 0 for default)"`
@@ -273,12 +284,28 @@ func readRegistrars() []toolRegistrar {
 			})
 		},
 
-		// workouts_sml
+		// workouts_sml — full per-workout sample data (GET /v1/workouts/{key}/sml).
+		//
+		// Two response modes:
+		//   * No filter args → returns the raw JSON blob base64-encoded as
+		//     {"key","base64"}. The full SML is ~5 MB on a typical workout
+		//     and WILL exceed the MCP 1 MB response cap on anything longer
+		//     than ~30 min. Prefer the filtered mode.
+		//   * `streams` and/or `downsample` set → parses the blob server-side
+		//     and returns {"key","sample_count","samples":[...],"summary"?}
+		//     where each sample is the inner Sample object plus its
+		//     TimeISO8601 (when available). This is the recommended path for
+		//     agents that want a specific channel (HR, Power, Cadence,
+		//     GPSAltitude, …) and can usually fit a 2-hour ride into well
+		//     under 1 MB.
 		func(s *sdkmcp.Server, d *deps) {
 			sdkmcp.AddTool(s, &sdkmcp.Tool{
-				Name:        "workouts_sml",
-				Description: "Fetch the full per-workout SML JSON blob (GET /v1/workouts/{key}/sml) and return it base64-encoded.",
-			}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args workoutKeyArgs) (*sdkmcp.CallToolResult, any, error) {
+				Name: "workouts_sml",
+				Description: "Fetch per-workout SML sample data (GET /v1/workouts/{key}/sml). " +
+					"IMPORTANT: the full SML is ~5 MB and will hit the MCP 1 MB response cap on workouts longer than ~30 minutes. " +
+					"For long workouts always pass `streams` (e.g. ['HR','Power','Cadence']) and optionally `downsample` to get a structured, filtered subset instead of the raw base64 blob. " +
+					"Without `streams`/`downsample` the response is {key, base64} of the whole body; with either set it is {key, sample_count, samples:[{TimeISO8601?, ...kept fields}], summary?}.",
+			}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args workoutsSMLArgs) (*sdkmcp.CallToolResult, any, error) {
 				if e := authGate(d); e != nil {
 					return e, nil, nil
 				}
@@ -291,7 +318,15 @@ func readRegistrars() []toolRegistrar {
 				if err != nil {
 					return mapErrorToCallToolResult(err), nil, nil
 				}
-				return nil, map[string]any{"key": args.Key, "base64": base64.StdEncoding.EncodeToString(b)}, nil
+				if len(args.Streams) == 0 && args.Downsample <= 1 {
+					return nil, map[string]any{"key": args.Key, "base64": base64.StdEncoding.EncodeToString(b)}, nil
+				}
+				out, ferr := filterSML(b, args.Streams, args.Downsample, args.IncludeSummary)
+				if ferr != nil {
+					return mapErrorToCallToolResult(ferr), nil, nil
+				}
+				out["key"] = args.Key
+				return nil, out, nil
 			})
 		},
 

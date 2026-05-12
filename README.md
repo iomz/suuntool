@@ -135,6 +135,16 @@ suuntool mcp --allow-write --allow-destructive    # + delete/uncomment/unreact
 
 `login`/`logout` are intentionally **not** exposed. Workout responses are enriched with `activityName` next to the numeric `activityId` so the LLM doesn't need a second lookup. Wellness NDJSON streams are buffered into `{items: [...]}` arrays with an optional `limit` — keep windows short for long histories.
 
+> **`workouts_sml` and the 1 MB response cap.** The raw `/sml` body is ~5 MB on a typical ride and will exceed MCP's 1 MB response limit on anything longer than ~30 min. Pass `streams` (and optionally `downsample`) to get a filtered, structured subset instead of the base64 blob:
+>
+> ```jsonc
+> // power curve / HR analysis for a 2h ride
+> { "key": "abc123", "streams": ["HR", "Power", "Cadence"], "downsample": 2 }
+> // → { key, sample_count, samples: [ { TimeISO8601, HR, Power?, Cadence? }, … ] }
+> ```
+>
+> Available inner-Sample fields include `HR`, `Power`, `Cadence`, `GPSAltitude`, `Latitude`, `Longitude`, `UTC`, `EHPE`, `NumberOfSatellites`, `Events`. Samples that don't contain any requested field are dropped. Omit both args to keep the legacy `{key, base64}` passthrough.
+
 <details>
 <summary><strong>Claude Desktop</strong></summary>
 
