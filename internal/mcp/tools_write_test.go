@@ -124,6 +124,24 @@ func TestTool_WorkoutsExtensions(t *testing.T) {
 	mustOK(t, callTool(t, cs, "workouts_extensions", map[string]any{"key": "w1"}))
 }
 
+func TestTool_WorkoutsExtensions_RejectsUnknownType(t *testing.T) {
+	// No httptest server registration — the handler must short-circuit on
+	// validation before issuing any HTTP request. A bare httptest server is
+	// enough because we should never reach it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+	cs := startTestServer(t, srv.URL+"/v1/", "", authSession())
+	res := callTool(t, cs, "workouts_extensions", map[string]any{
+		"key":   "w1",
+		"types": []string{"PowerExtension"}, // not a valid Suunto extension
+	})
+	if !res.IsError {
+		t.Fatal("expected validation error for unknown extension type")
+	}
+}
+
 func TestTool_WorkoutsUpload(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" || r.URL.Path != "/v1/workout" {

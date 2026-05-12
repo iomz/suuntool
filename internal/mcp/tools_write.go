@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"os"
+	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -11,6 +12,18 @@ import (
 	"github.com/tajchert/suuntool/internal/api/endpoints"
 	"github.com/tajchert/suuntool/internal/session"
 )
+
+// validExtensionTypes is the membership set of endpoints.DefaultExtensionTypes,
+// rebuilt once for O(1) lookups in the workouts_extensions registrar. Passing
+// an unknown extension type to /v1/workout/extensions/{key} returns an opaque
+// HTTP 500 from Suunto, so we reject upfront with a USAGE error.
+var validExtensionTypes = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(endpoints.DefaultExtensionTypes))
+	for _, t := range endpoints.DefaultExtensionTypes {
+		m[t] = struct{}{}
+	}
+	return m
+}()
 
 // --- write-tier arg structs ---
 
@@ -40,7 +53,7 @@ type workoutsShareArgs struct {
 
 type workoutsExtensionsArgs struct {
 	Key   string   `json:"key" jsonschema:"workout key"`
-	Types []string `json:"types,omitempty" jsonschema:"extension types to request; empty = default Android set"`
+	Types []string `json:"types,omitempty" jsonschema:"extension types to request; empty = default Android set. Valid values: SummaryExtension, FitnessExtension, SkiExtension, IntensityExtension, DiveHeaderExtension, SwimmingHeaderExtension, WeatherExtension, JumpRopeExtension."`
 }
 
 type workoutsUploadArgs struct {
@@ -159,6 +172,14 @@ func writeRegistrars() []toolRegistrar {
 				if e := authGate(d); e != nil {
 					return e, nil, nil
 				}
+				if bad := unknownExtensionTypes(a.Types); len(bad) > 0 {
+					return mapErrorToCallToolResult(&api.Error{
+						Code:    "USAGE",
+						Message: "unknown extension type(s): " + strings.Join(bad, ", "),
+						Hint:    "valid types: " + strings.Join(endpoints.DefaultExtensionTypes, ", "),
+						Exit:    2,
+					}), nil, nil
+				}
 				v, err := endpoints.FetchExtensions(ctx, d.client, a.Key, a.Types)
 				if err != nil {
 					return mapErrorToCallToolResult(err), nil, nil
@@ -226,4 +247,17 @@ func writeRegistrars() []toolRegistrar {
 			})
 		},
 	}
+}
+
+// unknownExtensionTypes returns the subset of types that aren't in the
+// canonical list (handoff/WRITE_FLOWS.md §extensions). Empty input → no errors;
+// the endpoint substitutes the default set itself.
+func unknownExtensionTypes(types []string) []string {
+	var bad []string
+	for _, t := range types {
+		if _, ok := validExtensionTypes[t]; !ok {
+			bad = append(bad, t)
+		}
+	}
+	return bad
 }
