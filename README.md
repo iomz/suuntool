@@ -1,8 +1,8 @@
 # suuntool
 
-> **Own your Suunto data. From the terminal. With one command.**
-
 `suuntool` is a fast, scriptable, agent-friendly CLI for the Suunto / Sports-Tracker API — the same backend the Suunto mobile app talks to. Log in, pull your profile, pipe it into `jq`, automate it, hand it to an LLM. No browser, no app, no clicks.
+
+It also doubles as an [MCP server](#mcp-server) — point Claude Desktop, Claude Code, or Codex at it and they can call every Suunto endpoint directly with typed arguments.
 
 ```bash
 $ suuntool login --email you@example.com
@@ -103,6 +103,113 @@ suuntool doctor                                     # connectivity + session che
 suuntool logout
 ```
 
+## MCP server
+
+`suuntool mcp` exposes every endpoint above as a [Model Context Protocol](https://modelcontextprotocol.io) tool over stdio. Point any MCP-capable client at it and an LLM can call Suunto endpoints directly with typed arguments — no shell scraping.
+
+```bash
+suuntool login                                    # one-time; the MCP server cannot prompt for a password
+suuntool mcp                                      # read-only (default)
+suuntool mcp --allow-write                        # + comment/react/edit/batch-update/share/extensions/upload
+suuntool mcp --allow-write --allow-destructive    # + delete/uncomment/unreact
+```
+
+| Tier | Flag | Tools |
+|------|------|-------|
+| read (default) | none | `whoami`, `profile_settings`/`follow`/`user`, `workouts_list`/`get`/`count`/`stats`/`sml`/`fit`/`comments`, `wellness_sleep`/`activity`/`recovery`/`sleepstages`, `activity_type_name`, `doctor` |
+| write | `--allow-write` | `workouts_comment`/`react`/`edit`/`batch_update`/`share`/`extensions`/`upload` (file bodies via base64) |
+| destructive | `--allow-destructive` (requires `--allow-write`) | `workouts_delete`/`uncomment`/`unreact` |
+
+`login`/`logout` are intentionally **not** exposed. Workout responses are enriched with `activityName` next to the numeric `activityId` so the LLM doesn't need a second lookup. Wellness NDJSON streams are buffered into `{items: [...]}` arrays with an optional `limit` — keep windows short for long histories.
+
+<details>
+<summary><strong>Claude Desktop</strong></summary>
+
+Edit the desktop config file (quit and reopen Claude after editing):
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "suuntool": {
+      "command": "suuntool",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+For writes/deletes, expand `args`:
+
+```json
+"args": ["mcp", "--allow-write", "--allow-destructive"]
+```
+
+Claude Desktop does **not** inherit your shell's `$PATH`, so if `which suuntool` returns something like `/Users/you/go/bin/suuntool` (a `go install` build), use the absolute path in `command`. Homebrew installs (`/opt/homebrew/bin/suuntool` on Apple Silicon, `/usr/local/bin/suuntool` on Intel) are usually picked up automatically.
+
+The 🔨 tool icon in the chat input should show `suuntool` once the app restarts.
+
+</details>
+
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+One command — uses Claude Code's built-in MCP registry:
+
+```bash
+claude mcp add suuntool suuntool mcp                                       # read-only
+claude mcp add suuntool suuntool mcp --allow-write                         # + writes
+claude mcp add suuntool suuntool mcp --allow-write --allow-destructive     # + deletes
+```
+
+Scope flags control where the entry is stored:
+
+- `--scope local` (default): current project, this machine only
+- `--scope user`: every project, this machine
+- `--scope project`: written to `.mcp.json`, committed for the team
+
+Verify inside a Claude Code session with the `/mcp` slash command — `suuntool` should appear with its tool count.
+
+If `suuntool` isn't on `$PATH`, pass the absolute path: `claude mcp add suuntool /Users/you/bin/suuntool mcp`.
+
+</details>
+
+<details>
+<summary><strong>Codex (OpenAI CLI)</strong></summary>
+
+Edit `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.suuntool]
+command = "suuntool"
+args = ["mcp"]
+```
+
+For writes/deletes:
+
+```toml
+[mcp_servers.suuntool]
+command = "suuntool"
+args = ["mcp", "--allow-write", "--allow-destructive"]
+```
+
+Codex MCP servers are loaded on session start — restart any running `codex` process. List configured servers with `codex mcp list`; verify the tools at runtime with the `/mcp` slash command.
+
+Use an absolute path in `command` if `suuntool` isn't on the Codex process's `$PATH`.
+
+</details>
+
+### Sanity check
+
+In any client, ask:
+
+> "Use suuntool to show my last 3 workouts."
+
+The model should call `workouts_list` with `limit: 3` and return rows with both `activityId` and `activityName`. If you see `AUTH_EXPIRED`, run `suuntool login` in a terminal and reconnect — the MCP server loads the on-disk session at startup and never re-auths silently.
+
 ## Output
 
 `suuntool` picks a sensible default and gets out of the way:
@@ -191,37 +298,7 @@ These mutate server state. The `delete` command requires `--yes` in non-TTY cont
 
 ### MCP server
 
-`suuntool mcp` exposes every read/write endpoint above as a [Model Context Protocol](https://modelcontextprotocol.io) tool over stdio. Point Claude Desktop, Claude Code, or any MCP-capable client at it and an LLM can call Suunto endpoints with typed arguments — no shell scraping.
-
-| Tier | Flag | Tools |
-|------|------|-------|
-| read (default) | none | `whoami`, `profile_settings`/`follow`/`user`, `workouts_list`/`get`/`count`/`stats`/`sml`/`fit`/`comments`, `wellness_sleep`/`activity`/`recovery`/`sleepstages`, `activity_type_name`, `doctor` |
-| write | `--allow-write` | `workouts_comment`/`react`/`edit`/`batch_update`/`share`/`extensions`/`upload` (binaries via base64) |
-| destructive | `--allow-destructive` (requires `--allow-write`) | `workouts_delete`/`uncomment`/`unreact` |
-
-```bash
-suuntool login                          # one-time interactive login (not exposed as a tool)
-suuntool mcp                            # read-only server
-suuntool mcp --allow-write              # add comment/react/edit/...
-suuntool mcp --allow-write --allow-destructive  # add deletes
-```
-
-Wire it into Claude Desktop / Claude Code via `~/.config/claude/claude_desktop_config.json` (or the equivalent settings UI):
-
-```json
-{
-  "mcpServers": {
-    "suuntool": { "command": "suuntool", "args": ["mcp"] }
-  }
-}
-```
-
-Notes for callers:
-
-- Workouts surfaced through MCP are enriched with `activityName` next to the numeric `activityId` — no second lookup needed.
-- If no session is on disk, the server still starts; every authed tool returns a structured `{code: "AUTH_EXPIRED", hint: "Run: suuntool login"}` so the LLM can prompt the user instead of crashing.
-- `login`/`logout` are intentionally **not** exposed (interactive password, persisted session mutation). Both stay CLI-only.
-- Wellness NDJSON streams are buffered into `{items: [...]}` arrays with optional `limit` — request smaller windows for long histories.
+`suuntool mcp` runs an MCP stdio server. See the dedicated [MCP server](#mcp-server) section above for full config snippets for Claude Desktop, Claude Code, and Codex.
 
 ### Discovery / meta
 
