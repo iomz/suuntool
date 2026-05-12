@@ -279,8 +279,9 @@ func TestTool_WorkoutsComments(t *testing.T) {
 // stub's root: /v1/{stream}/export.
 func TestTool_WellnessSleep(t *testing.T) {
 	body := gzipLines(t, []string{
-		`{"timestamp":"2026-05-11T00:00:00Z","entryData":{"k":1}}`,
-		`{"timestamp":"2026-05-11T01:00:00Z","entryData":{"k":2}}`,
+		`{"timestamp":"2026-05-10T00:00:00Z","entryData":{"k":1}}`,
+		`{"timestamp":"2026-05-12T00:00:00Z","entryData":{"k":3}}`,
+		`{"timestamp":"2026-05-11T00:00:00Z","entryData":{"k":2}}`,
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/sleep/export" {
@@ -290,11 +291,28 @@ func TestTool_WellnessSleep(t *testing.T) {
 	}))
 	defer srv.Close()
 	cs := startTestServer(t, srv.URL+"/v1/", srv.URL+"/", authSession())
-	res := callTool(t, cs, "wellness_sleep", map[string]any{"since_ms": 1000, "limit": 5})
+
+	// Default order: newest first, capped by limit.
+	res := callTool(t, cs, "wellness_sleep", map[string]any{"since_ms": 1000, "limit": 2})
 	mustOK(t, res)
-	items := res.StructuredContent.(map[string]any)["items"].([]any)
+	sc := res.StructuredContent.(map[string]any)
+	items := sc["items"].([]any)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if got := items[0].(map[string]any)["timestamp"]; got != "2026-05-12T00:00:00Z" {
+		t.Fatalf("expected newest first, got %v", got)
+	}
+	if got := sc["order"]; got != "desc" {
+		t.Fatalf("expected order=desc, got %v", got)
+	}
+
+	// Ascending order returns oldest first.
+	res = callTool(t, cs, "wellness_sleep", map[string]any{"order": "asc"})
+	mustOK(t, res)
+	items = res.StructuredContent.(map[string]any)["items"].([]any)
+	if got := items[0].(map[string]any)["timestamp"]; got != "2026-05-10T00:00:00Z" {
+		t.Fatalf("expected oldest first with order=asc, got %v", got)
 	}
 }
 

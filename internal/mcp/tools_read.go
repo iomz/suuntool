@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"sort"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -42,8 +43,9 @@ type workoutsStatsArgs struct {
 }
 
 type wellnessArgs struct {
-	SinceMS int64 `json:"since_ms,omitempty" jsonschema:"unix-millisecond cursor; 0 = all history"`
-	Limit   int   `json:"limit,omitempty" jsonschema:"max NDJSON entries to return (0 = no limit)"`
+	SinceMS int64  `json:"since_ms,omitempty" jsonschema:"unix-millisecond cursor; 0 = all history"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"max entries to return after ordering (0 = no limit)"`
+	Order   string `json:"order,omitempty" jsonschema:"sort order by entry timestamp: 'desc' = newest first (default), 'asc' = oldest first"`
 }
 
 // authGate returns AUTH_EXPIRED when no session is loaded. Returns nil if ok.
@@ -56,8 +58,8 @@ func authGate(d *deps) *sdkmcp.CallToolResult {
 	return nil
 }
 
-// readNDJSON decodes one JSON object per line from r, optionally bounded by limit.
-func readNDJSON(r io.ReadCloser, limit int) ([]map[string]any, error) {
+// readNDJSON decodes one JSON object per line from r.
+func readNDJSON(r io.ReadCloser) ([]map[string]any, error) {
 	defer r.Close()
 	dec := json.NewDecoder(r)
 	var out []map[string]any
@@ -67,11 +69,38 @@ func readNDJSON(r io.ReadCloser, limit int) ([]map[string]any, error) {
 			return nil, err
 		}
 		out = append(out, m)
-		if limit > 0 && len(out) >= limit {
-			break
-		}
 	}
 	return out, nil
+}
+
+// orderAndLimit sorts NDJSON-decoded entries by their "timestamp" field and
+// optionally truncates. order="asc" → oldest first; anything else → newest
+// first (the default — matches the natural "how was my X recently" intent).
+// Timestamps are ISO-8601 strings on these streams, so lexicographic sort is
+// equivalent to chronological sort.
+func orderAndLimit(items []map[string]any, order string, limit int) []map[string]any {
+	tsOf := func(m map[string]any) string {
+		if s, ok := m["timestamp"].(string); ok {
+			return s
+		}
+		return ""
+	}
+	if order == "asc" {
+		sort.SliceStable(items, func(i, j int) bool { return tsOf(items[i]) < tsOf(items[j]) })
+	} else {
+		sort.SliceStable(items, func(i, j int) bool { return tsOf(items[i]) > tsOf(items[j]) })
+	}
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return items
+}
+
+func orderLabel(order string) string {
+	if order == "asc" {
+		return "asc"
+	}
+	return "desc"
 }
 
 // readRegistrars returns the read-only (tierRead) tool registrars.
@@ -306,13 +335,13 @@ func readRegistrars() []toolRegistrar {
 		},
 
 		// wellness_sleep
-		makeWellnessTool("wellness_sleep", "Stream 24/7 sleep entries as JSON objects (GET /v1/sleep/export).", endpoints.StreamSleep),
+		makeWellnessTool("wellness_sleep", "List sleep records from Suunto 24/7 wellness (nightly sleep sessions and naps with duration, REM/deep/light split, HR, HRV, SpO2). Use this for questions like 'how was my sleep recently', 'last week's sleep', 'sleep history'. Returns newest first by default (order=desc); pass order=asc for chronological. Use limit to cap entries and since_ms to filter by start time.", endpoints.StreamSleep),
 		// wellness_activity
-		makeWellnessTool("wellness_activity", "Stream 24/7 activity entries as JSON objects (GET /v1/activity/export).", endpoints.StreamActivity),
+		makeWellnessTool("wellness_activity", "List daily activity records from Suunto 24/7 wellness (steps, calories, intensity buckets). Use this for questions like 'my activity yesterday' or 'weekly steps'. Returns newest first by default (order=desc); pass order=asc for chronological. Use limit to cap entries and since_ms to filter by start time.", endpoints.StreamActivity),
 		// wellness_recovery
-		makeWellnessTool("wellness_recovery", "Stream 24/7 recovery entries as JSON objects (GET /v1/recovery/export).", endpoints.StreamRecovery),
+		makeWellnessTool("wellness_recovery", "List recovery / resources records from Suunto 24/7 wellness (body resources, stress, recovery score over time). Returns newest first by default (order=desc); pass order=asc for chronological. Use limit to cap entries and since_ms to filter by start time.", endpoints.StreamRecovery),
 		// wellness_sleepstages
-		makeWellnessTool("wellness_sleepstages", "Stream 24/7 sleep-stages entries as JSON objects (GET /v1/sleepstages/export).", endpoints.StreamSleepStages),
+		makeWellnessTool("wellness_sleepstages", "List per-night sleep-stage timeline entries from Suunto 24/7 wellness (awake/REM/light/deep transitions). Returns newest first by default (order=desc); pass order=asc for chronological. Use limit to cap entries and since_ms to filter by start time.", endpoints.StreamSleepStages),
 
 		// activity_type_name (unauthed lookup; uses the embedded ActivityType table)
 		registerActivityNameTool,
@@ -330,11 +359,12 @@ func makeWellnessTool(name, desc string, stream endpoints.WellnessStream) toolRe
 				if err != nil {
 					return mapErrorToCallToolResult(err), nil, nil
 				}
-				items, err := readNDJSON(rc, args.Limit)
+				items, err := readNDJSON(rc)
 				if err != nil {
 					return mapErrorToCallToolResult(err), nil, nil
 				}
-				return nil, map[string]any{"items": items}, nil
+				items = orderAndLimit(items, args.Order, args.Limit)
+				return nil, map[string]any{"items": items, "order": orderLabel(args.Order)}, nil
 			})
 	}
 }
