@@ -32,10 +32,11 @@ Act  Type           Count  Distance  Duration  ΔWoW
 11   HIKING         1      5.80km    1:05:00   -1
 22   TRAIL_RUNNING  1      1.20km    0:28:11   0
 
-$ suuntool wellness sleep --since 3d | jq -c '{date:(.startTime/1000|todate), score:.sleepScore, hrBpm:(.avgHeartRate*60)}'
-{"date":"2026-05-10T22:35:00Z","score":82,"hrBpm":54.6}
-{"date":"2026-05-11T22:48:00Z","score":76,"hrBpm":57.1}
-{"date":"2026-05-12T22:21:00Z","score":88,"hrBpm":52.3}
+$ suuntool wellness sleep --since 3d | jq -c '{date:.timestamp, nap:.entryData.isNap, quality:(.entryData.quality*100|round), hrBpm:(.entryData.hrAvg*60|round)}'
+{"date":"2026-05-09T18:25:00Z","nap":true,"quality":0,"hrBpm":78}
+{"date":"2026-05-10T02:46:00Z","nap":false,"quality":73,"hrBpm":67}
+{"date":"2026-05-10T14:50:00Z","nap":true,"quality":0,"hrBpm":84}
+{"date":"2026-05-11T01:55:00Z","nap":false,"quality":77,"hrBpm":69}
 ```
 
 ## Why
