@@ -173,10 +173,12 @@ The 🔨 tool icon in the chat input should show `suuntool` once the app restart
 One command — uses Claude Code's built-in MCP registry:
 
 ```bash
-claude mcp add suuntool suuntool mcp                                       # read-only
-claude mcp add suuntool suuntool mcp --allow-write                         # + writes
-claude mcp add suuntool suuntool mcp --allow-write --allow-destructive     # + deletes
+claude mcp add suuntool suuntool mcp                                          # read-only
+claude mcp add suuntool -- suuntool mcp --allow-write                         # + writes
+claude mcp add suuntool -- suuntool mcp --allow-write --allow-destructive     # + deletes
 ```
+
+Note the `--` separator before `suuntool mcp` when passing tier flags — without it, `claude mcp add` tries to parse `--allow-write` as one of its own options and errors out with `unknown option '--allow-write'`.
 
 Scope flags control where the entry is stored:
 
@@ -186,7 +188,7 @@ Scope flags control where the entry is stored:
 
 Verify inside a Claude Code session with the `/mcp` slash command — `suuntool` should appear with its tool count.
 
-If `suuntool` isn't on `$PATH`, pass the absolute path: `claude mcp add suuntool /Users/you/bin/suuntool mcp`.
+If `suuntool` isn't on `$PATH`, pass the absolute path: `claude mcp add suuntool -- /Users/you/bin/suuntool mcp`.
 
 </details>
 
