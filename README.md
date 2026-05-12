@@ -1,6 +1,18 @@
-# suuntool
+<p align="center">
+  <img src="assets/suuntool.png" alt="suuntool" width="200">
+</p>
 
-`suuntool` is a fast, scriptable, agent-friendly CLI for the Suunto / Sports-Tracker API — the same backend the Suunto mobile app talks to. Log in, pull your profile, pipe it into `jq`, automate it, hand it to an LLM. No browser, no app, no clicks.
+<h1 align="center">suuntool</h1>
+
+<p align="center">
+  <a href="https://golang.org/"><img src="https://img.shields.io/github/go-mod/go-version/tajchert/suuntool?logo=go&logoColor=white" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/tajchert/suuntool" alt="License"></a>
+  <a href="https://github.com/tajchert/suuntool/releases"><img src="https://img.shields.io/github/v/release/tajchert/suuntool?include_prereleases&sort=semver" alt="Release"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="Platform">
+  <img src="https://img.shields.io/badge/MCP-ready-7c3aed" alt="MCP ready">
+</p>
+
+Fast, scriptable, agent-friendly CLI for the Suunto / Sports-Tracker API — the same backend the Suunto mobile app uses. Log in, pull your profile, pipe it into `jq`, automate it, hand it to an LLM. No browser, no app, no clicks.
 
 It also doubles as an [MCP server](#mcp-server) — point Claude Desktop, Claude Code, or Codex at it and they can call every Suunto endpoint directly with typed arguments.
 
