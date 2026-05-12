@@ -17,6 +17,7 @@ import (
 	"github.com/tajchert/suuntool/internal/api/endpoints"
 	"github.com/tajchert/suuntool/internal/auth"
 	"github.com/tajchert/suuntool/internal/output"
+	"github.com/tajchert/suuntool/internal/session"
 )
 
 var workoutsCmd = &cobra.Command{
@@ -460,7 +461,7 @@ Quotas are conservative — don't batch-spam comments.`,
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
 		defer cancel()
-		raw, err := endpoints.PostComment(ctx, c, key, text, totpHeaders(sess))
+		raw, err := endpoints.PostComment(ctx, c, key, text, session.TOTPHeaders(sess))
 		if err != nil {
 			return err
 		}
@@ -495,7 +496,7 @@ The server validates x-totp; the CLI auto-generates one from the session.`,
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), pickTimeout())
 		defer cancel()
-		raw, err := endpoints.AddReaction(ctx, c, args[0], endpoints.Reaction(flagReactType), totpHeaders(sess))
+		raw, err := endpoints.AddReaction(ctx, c, args[0], endpoints.Reaction(flagReactType), session.TOTPHeaders(sess))
 		if err != nil {
 			return err
 		}

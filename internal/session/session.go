@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/tajchert/suuntool/internal/auth"
 )
 
 var ErrNoSession = errors.New("no saved session")
@@ -73,4 +75,13 @@ func Clear() error {
 		return err
 	}
 	return nil
+}
+
+// TOTPHeaders returns the x-totp request header required by Suunto write
+// endpoints (reactions, comments, settings-safe, email/phone change). The
+// TOTP rotates every 30s; call this fresh per request.
+func TOTPHeaders(s *Session) map[string]string {
+	return map[string]string{
+		"x-totp": auth.GenerateTOTP(s.Email, s.OffsetMS),
+	}
 }
