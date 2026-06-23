@@ -1,10 +1,14 @@
 package endpoints_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +17,7 @@ import (
 
 	"github.com/tajchert/suuntool/internal/api"
 	"github.com/tajchert/suuntool/internal/api/endpoints"
+	"github.com/tajchert/suuntool/internal/output"
 )
 
 func TestListWorkouts_DecodesEnvelopeAndCursor(t *testing.T) {
@@ -59,6 +64,66 @@ func TestGetWorkout_ParsesSingle(t *testing.T) {
 	assert.Equal(t, "alice", w.Username)
 	assert.Equal(t, 1, w.ActivityID)
 	assert.InDelta(t, 5000.0, w.TotalDistance, 0.001)
+}
+
+func TestGetWorkout_PreservesWorkoutDetailExtraFields(t *testing.T) {
+	fixture := readFixture(t, "workout_detail_extra_fields.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/workouts/wk1", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(fixture)
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL+"/v1/", "SK", 0)
+	w, err := endpoints.GetWorkout(context.Background(), client, "wk1")
+	require.NoError(t, err)
+	require.NotNil(t, w)
+
+	require.NotNil(t, w.EnergyConsumption)
+	assert.InDelta(t, 321.5, *w.EnergyConsumption, 0.001)
+
+	require.NotNil(t, w.HRData)
+	require.NotNil(t, w.HRData.Avg)
+	require.NotNil(t, w.HRData.WorkoutMaxHR)
+	assert.InDelta(t, 145.0, *w.HRData.Avg, 0.001)
+	assert.InDelta(t, 172.0, *w.HRData.WorkoutMaxHR, 0.001)
+
+	require.NotNil(t, w.TSS)
+	require.NotNil(t, w.TSS.TrainingStressScore)
+	require.NotNil(t, w.TSS.CalculationMethod)
+	assert.InDelta(t, 62.4, *w.TSS.TrainingStressScore, 0.001)
+	assert.Equal(t, "HR", *w.TSS.CalculationMethod)
+
+	require.Len(t, w.TSSList, 2)
+	require.NotNil(t, w.TSSList[1].CalculationMethod)
+	assert.Equal(t, "POWER", *w.TSSList[1].CalculationMethod)
+
+	require.Len(t, w.Extensions, 2)
+	assert.JSONEq(t, `{"type":"FitnessExtension","vo2Max":52.1,"fitnessAge":28}`, string(w.Extensions[0]))
+}
+
+func TestGetWorkout_JSONOutputIncludesWorkoutDetailExtraFields(t *testing.T) {
+	fixture := readFixture(t, "workout_detail_extra_fields.json")
+	var envelope struct {
+		Payload endpoints.RemoteSyncedWorkout `json:"payload"`
+	}
+	require.NoError(t, json.Unmarshal(fixture, &envelope))
+
+	var buf bytes.Buffer
+	require.NoError(t, output.Render(&buf, envelope.Payload, output.Opts{Format: "json"}))
+
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
+	require.Contains(t, got, "energyConsumption")
+	require.Contains(t, got, "hrdata")
+	require.Contains(t, got, "tss")
+	require.Contains(t, got, "tssList")
+	require.Contains(t, got, "extensions")
+	assert.JSONEq(t, `321.5`, string(got["energyConsumption"]))
+	assert.JSONEq(t, `{"trainingStressScore":62.4,"calculationMethod":"HR","intensityFactor":0.84,"normalizedPower":210,"averageGradeAdjustedPace":4.75}`, string(got["tss"]))
+	assert.JSONEq(t, `[{"type":"FitnessExtension","vo2Max":52.1,"fitnessAge":28},{"type":"SummaryExtension","avgPower":205,"peakEpoc":88}]`, string(got["extensions"]))
 }
 
 func TestStats_DecodesEnvelope(t *testing.T) {
@@ -248,4 +313,11 @@ func TestWorkoutList_SummaryWithWoW(t *testing.T) {
 	colored := s.RenderPretty(func(p, kind string) string { return "[" + kind + ":" + p + "]" })
 	assert.Contains(t, colored, "[pos:+2]")
 	assert.Contains(t, colored, "[neg:-2]")
+}
+
+func readFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", name))
+	require.NoError(t, err)
+	return b
 }

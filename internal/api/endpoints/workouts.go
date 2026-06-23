@@ -18,26 +18,52 @@ type LatLon struct {
 	Longitude float64 `json:"longitude"`
 }
 
+// WorkoutTSS is the training stress score block embedded in workout detail
+// responses. Field values may be absent depending on calculation method.
+type WorkoutTSS struct {
+	TrainingStressScore      *float64 `json:"trainingStressScore,omitempty"`
+	CalculationMethod        *string  `json:"calculationMethod,omitempty"`
+	IntensityFactor          *float64 `json:"intensityFactor,omitempty"`
+	NormalizedPower          *float64 `json:"normalizedPower,omitempty"`
+	AverageGradeAdjustedPace *float64 `json:"averageGradeAdjustedPace,omitempty"`
+}
+
+// WorkoutHRData is the heart-rate summary block embedded in workout detail
+// responses.
+type WorkoutHRData struct {
+	Max          *float64 `json:"max,omitempty"`
+	HRMax        *float64 `json:"hrmax,omitempty"`
+	Avg          *float64 `json:"avg,omitempty"`
+	UserMaxHR    *float64 `json:"userMaxHR,omitempty"`
+	WorkoutAvgHR *float64 `json:"workoutAvgHR,omitempty"`
+	WorkoutMaxHR *float64 `json:"workoutMaxHR,omitempty"`
+}
+
 // RemoteSyncedWorkout is the shape returned by /v1/workouts, /v1/workouts/{key},
 // and /v1/workouts/{username}/public. Only fields confirmed live in handoff §5
 // are included.
 type RemoteSyncedWorkout struct {
-	Key            string  `json:"key"`
-	Username       string  `json:"username"`
-	ActivityID     int     `json:"activityId"`
-	StartTime      int64   `json:"startTime"`      // unix ms
-	StopTime       int64   `json:"stopTime"`       // unix ms
-	TotalTime      float64 `json:"totalTime"`      // seconds
-	TotalDistance  float64 `json:"totalDistance"`  // meters
-	TotalAscent    float64 `json:"totalAscent"`
-	TotalDescent   float64 `json:"totalDescent"`
-	MaxSpeed       float64 `json:"maxSpeed,omitempty"`
-	Polyline       string  `json:"polyline,omitempty"`
-	StepCount      int     `json:"stepCount,omitempty"`
-	RecoveryTime   int     `json:"recoveryTime,omitempty"`
-	StartPosition  *LatLon `json:"startPosition,omitempty"`
-	StopPosition   *LatLon `json:"stopPosition,omitempty"`
-	CenterPosition *LatLon `json:"centerPosition,omitempty"`
+	Key               string            `json:"key"`
+	Username          string            `json:"username"`
+	ActivityID        int               `json:"activityId"`
+	StartTime         int64             `json:"startTime"`     // unix ms
+	StopTime          int64             `json:"stopTime"`      // unix ms
+	TotalTime         float64           `json:"totalTime"`     // seconds
+	TotalDistance     float64           `json:"totalDistance"` // meters
+	TotalAscent       float64           `json:"totalAscent"`
+	TotalDescent      float64           `json:"totalDescent"`
+	MaxSpeed          float64           `json:"maxSpeed,omitempty"`
+	Polyline          string            `json:"polyline,omitempty"`
+	StepCount         int               `json:"stepCount,omitempty"`
+	RecoveryTime      int               `json:"recoveryTime,omitempty"`
+	EnergyConsumption *float64          `json:"energyConsumption,omitempty"`
+	HRData            *WorkoutHRData    `json:"hrdata,omitempty"`
+	TSS               *WorkoutTSS       `json:"tss,omitempty"`
+	TSSList           []WorkoutTSS      `json:"tssList,omitempty"`
+	Extensions        []json.RawMessage `json:"extensions,omitempty"`
+	StartPosition     *LatLon           `json:"startPosition,omitempty"`
+	StopPosition      *LatLon           `json:"stopPosition,omitempty"`
+	CenterPosition    *LatLon           `json:"centerPosition,omitempty"`
 }
 
 // Pretty returns a single summary line for the workout.
