@@ -66,7 +66,7 @@ func TestGetWorkout_ParsesSingle(t *testing.T) {
 	assert.InDelta(t, 5000.0, w.TotalDistance, 0.001)
 }
 
-func TestGetWorkout_PreservesWorkoutDetailExtraFields(t *testing.T) {
+func TestGetWorkout_PreservesOptionalMetricsAndExtensions(t *testing.T) {
 	fixture := readFixture(t, "workout_detail_extra_fields.json")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/v1/workouts/wk1", r.URL.Path)
@@ -104,10 +104,10 @@ func TestGetWorkout_PreservesWorkoutDetailExtraFields(t *testing.T) {
 	assert.JSONEq(t, `{"type":"FitnessExtension","vo2Max":52.1,"fitnessAge":28}`, string(w.Extensions[0]))
 }
 
-func TestGetWorkout_JSONOutputIncludesWorkoutDetailExtraFields(t *testing.T) {
+func TestGetWorkout_JSONOutputIncludesOptionalMetricsAndExtensions(t *testing.T) {
 	fixture := readFixture(t, "workout_detail_extra_fields.json")
 	var envelope struct {
-		Payload endpoints.RemoteSyncedWorkout `json:"payload"`
+		Payload endpoints.RemoteSyncedWorkoutDetail `json:"payload"`
 	}
 	require.NoError(t, json.Unmarshal(fixture, &envelope))
 

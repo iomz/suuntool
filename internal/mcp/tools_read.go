@@ -238,7 +238,7 @@ func readRegistrars() []toolRegistrar {
 				if v == nil {
 					return nil, nil, nil
 				}
-				enriched := enrichWorkout(*v)
+				enriched := enrichWorkoutDetail(*v)
 				return nil, enriched, nil
 			})
 		},

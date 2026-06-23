@@ -15,13 +15,18 @@ type workoutWithName struct {
 	ActivityName string `json:"activityName"`
 }
 
+type workoutDetailWithName struct {
+	endpoints.RemoteSyncedWorkoutDetail
+	ActivityName string `json:"activityName"`
+}
+
 // perActivityWithName mirrors PerActivityStats with the activity name injected.
 type perActivityWithName struct {
 	endpoints.PerActivityStats
 	ActivityName string `json:"activityName"`
 }
 
-// workoutListView is the MCP-shaped response for workouts_list / workouts_get.
+// workoutListView is the MCP-shaped response for workouts_list.
 type workoutListView struct {
 	Items []workoutWithName `json:"items"`
 	Until int64             `json:"until"`
@@ -36,6 +41,10 @@ type workoutStatsView struct {
 
 func enrichWorkout(w endpoints.RemoteSyncedWorkout) workoutWithName {
 	return workoutWithName{RemoteSyncedWorkout: w, ActivityName: endpoints.ActivityName(w.ActivityID)}
+}
+
+func enrichWorkoutDetail(w endpoints.RemoteSyncedWorkoutDetail) workoutDetailWithName {
+	return workoutDetailWithName{RemoteSyncedWorkoutDetail: w, ActivityName: endpoints.ActivityName(w.ActivityID)}
 }
 
 func enrichWorkoutList(l *endpoints.WorkoutList) *workoutListView {
