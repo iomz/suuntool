@@ -162,7 +162,20 @@ func TestTool_WorkoutsList(t *testing.T) {
 		if !strings.HasPrefix(r.URL.Path, "/v1/workouts") {
 			t.Fatalf("bad path: %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"payload":[{"key":"w1","username":"alice","activityId":1,"startTime":1000,"stopTime":2000,"totalTime":1,"totalDistance":100}],"error":null,"metadata":{"until":2000}}`))
+		_, _ = w.Write([]byte(`{"payload":[{
+			"key":"w1",
+			"username":"alice",
+			"activityId":1,
+			"startTime":1000,
+			"stopTime":2000,
+			"totalTime":1,
+			"totalDistance":100,
+			"energyConsumption":321.5,
+			"hrdata":{"avg":145,"workoutMaxHR":172},
+			"tss":{"trainingStressScore":62.4,"calculationMethod":"HR"},
+			"tssList":[{"trainingStressScore":62.4,"calculationMethod":"HR"}],
+			"extensions":[{"type":"FitnessExtension","vo2Max":52.1}]
+		}],"error":null,"metadata":{"until":2000}}`))
 	}))
 	defer srv.Close()
 	cs := startTestServer(t, srv.URL+"/v1/", "", authSession())
@@ -177,11 +190,26 @@ func TestTool_WorkoutsList(t *testing.T) {
 	if first["activityName"] != "RUNNING" {
 		t.Fatalf("expected activityName=RUNNING, got %v", first["activityName"])
 	}
+	if first["energyConsumption"] != 321.5 {
+		t.Fatalf("expected energyConsumption=321.5, got %v", first["energyConsumption"])
+	}
+	if _, ok := first["hrdata"]; !ok {
+		t.Fatal("expected hrdata in list item")
+	}
+	if _, ok := first["tss"]; !ok {
+		t.Fatal("expected tss in list item")
+	}
+	if _, ok := first["tssList"]; !ok {
+		t.Fatal("expected tssList in list item")
+	}
+	if _, ok := first["extensions"]; ok {
+		t.Fatal("extensions must not appear in list item")
+	}
 }
 
 func TestTool_WorkoutsGet(t *testing.T) {
 	srv := newSuuntoStub(t, map[string]string{
-		"/v1/workouts/w1": `{"payload":{"key":"w1","username":"alice","activityId":1,"startTime":1000,"stopTime":2000,"totalTime":1,"totalDistance":100},"error":null,"metadata":null}`,
+		"/v1/workouts/w1": `{"payload":{"key":"w1","username":"alice","activityId":1,"startTime":1000,"stopTime":2000,"totalTime":1,"totalDistance":100,"extensions":[{"type":"FitnessExtension","vo2Max":52.1}]},"error":null,"metadata":null}`,
 	})
 	defer srv.Close()
 	cs := startTestServer(t, srv.URL+"/v1/", "", authSession())
@@ -190,6 +218,9 @@ func TestTool_WorkoutsGet(t *testing.T) {
 	sc := res.StructuredContent.(map[string]any)
 	if sc["activityName"] != "RUNNING" {
 		t.Fatalf("expected activityName=RUNNING, got %v", sc["activityName"])
+	}
+	if _, ok := sc["extensions"]; !ok {
+		t.Fatal("expected extensions in detail response")
 	}
 }
 

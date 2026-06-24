@@ -18,26 +18,56 @@ type LatLon struct {
 	Longitude float64 `json:"longitude"`
 }
 
-// RemoteSyncedWorkout is the shape returned by /v1/workouts, /v1/workouts/{key},
-// and /v1/workouts/{username}/public. Only fields confirmed live in handoff §5
-// are included.
+// WorkoutTSS is the training stress score block embedded in workout responses.
+// Field values may be absent depending on calculation method.
+type WorkoutTSS struct {
+	TrainingStressScore      *float64 `json:"trainingStressScore,omitempty"`
+	CalculationMethod        *string  `json:"calculationMethod,omitempty"`
+	IntensityFactor          *float64 `json:"intensityFactor,omitempty"`
+	NormalizedPower          *float64 `json:"normalizedPower,omitempty"`
+	AverageGradeAdjustedPace *float64 `json:"averageGradeAdjustedPace,omitempty"`
+}
+
+// WorkoutHRData is the heart-rate summary block embedded in workout responses.
+type WorkoutHRData struct {
+	Max          *float64 `json:"max,omitempty"`
+	HRMax        *float64 `json:"hrmax,omitempty"`
+	Avg          *float64 `json:"avg,omitempty"`
+	UserMaxHR    *float64 `json:"userMaxHR,omitempty"`
+	WorkoutAvgHR *float64 `json:"workoutAvgHR,omitempty"`
+	WorkoutMaxHR *float64 `json:"workoutMaxHR,omitempty"`
+}
+
+// RemoteSyncedWorkout is the list-safe shape returned by /v1/workouts and
+// /v1/workouts/{username}/public. It also contains fields shared with
+// /v1/workouts/{key}; detail-only fields live in RemoteSyncedWorkoutDetail.
 type RemoteSyncedWorkout struct {
-	Key            string  `json:"key"`
-	Username       string  `json:"username"`
-	ActivityID     int     `json:"activityId"`
-	StartTime      int64   `json:"startTime"`      // unix ms
-	StopTime       int64   `json:"stopTime"`       // unix ms
-	TotalTime      float64 `json:"totalTime"`      // seconds
-	TotalDistance  float64 `json:"totalDistance"`  // meters
-	TotalAscent    float64 `json:"totalAscent"`
-	TotalDescent   float64 `json:"totalDescent"`
-	MaxSpeed       float64 `json:"maxSpeed,omitempty"`
-	Polyline       string  `json:"polyline,omitempty"`
-	StepCount      int     `json:"stepCount,omitempty"`
-	RecoveryTime   int     `json:"recoveryTime,omitempty"`
-	StartPosition  *LatLon `json:"startPosition,omitempty"`
-	StopPosition   *LatLon `json:"stopPosition,omitempty"`
-	CenterPosition *LatLon `json:"centerPosition,omitempty"`
+	Key               string         `json:"key"`
+	Username          string         `json:"username"`
+	ActivityID        int            `json:"activityId"`
+	StartTime         int64          `json:"startTime"`     // unix ms
+	StopTime          int64          `json:"stopTime"`      // unix ms
+	TotalTime         float64        `json:"totalTime"`     // seconds
+	TotalDistance     float64        `json:"totalDistance"` // meters
+	TotalAscent       float64        `json:"totalAscent"`
+	TotalDescent      float64        `json:"totalDescent"`
+	MaxSpeed          float64        `json:"maxSpeed,omitempty"`
+	Polyline          string         `json:"polyline,omitempty"`
+	StepCount         int            `json:"stepCount,omitempty"`
+	RecoveryTime      int            `json:"recoveryTime,omitempty"`
+	EnergyConsumption *float64       `json:"energyConsumption,omitempty"`
+	HRData            *WorkoutHRData `json:"hrdata,omitempty"`
+	TSS               *WorkoutTSS    `json:"tss,omitempty"`
+	TSSList           []WorkoutTSS   `json:"tssList,omitempty"`
+	StartPosition     *LatLon        `json:"startPosition,omitempty"`
+	StopPosition      *LatLon        `json:"stopPosition,omitempty"`
+	CenterPosition    *LatLon        `json:"centerPosition,omitempty"`
+}
+
+// RemoteSyncedWorkoutDetail adds heavier fields returned by /v1/workouts/{key}.
+type RemoteSyncedWorkoutDetail struct {
+	RemoteSyncedWorkout
+	Extensions []json.RawMessage `json:"extensions,omitempty"`
 }
 
 // Pretty returns a single summary line for the workout.
@@ -316,12 +346,12 @@ func ListWorkouts(ctx context.Context, c *api.Client, opts ListWorkoutsOpts) (*W
 }
 
 // GetWorkout fetches a single workout by key.
-func GetWorkout(ctx context.Context, c *api.Client, key string) (*RemoteSyncedWorkout, error) {
+func GetWorkout(ctx context.Context, c *api.Client, key string) (*RemoteSyncedWorkoutDetail, error) {
 	body, err := c.Do(ctx, "GET", "workouts/"+key, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	w, err := api.DecodeAsko[RemoteSyncedWorkout](body)
+	w, err := api.DecodeAsko[RemoteSyncedWorkoutDetail](body)
 	if err != nil {
 		return nil, err
 	}

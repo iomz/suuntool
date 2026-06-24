@@ -1,0 +1,57 @@
+{
+  "error": null,
+  "payload": {
+    "key": "wk1",
+    "username": "alice",
+    "activityId": 1,
+    "startTime": 1700000000000,
+    "stopTime": 1700001800000,
+    "totalDistance": 5000.0,
+    "totalTime": 1800.0,
+    "energyConsumption": 321.5,
+    "hrdata": {
+      "max": 172,
+      "hrmax": 190,
+      "avg": 145,
+      "userMaxHR": 190,
+      "workoutAvgHR": 145,
+      "workoutMaxHR": 172
+    },
+    "tss": {
+      "trainingStressScore": 62.4,
+      "calculationMethod": "HR",
+      "intensityFactor": 0.84,
+      "normalizedPower": 210,
+      "averageGradeAdjustedPace": 4.75
+    },
+    "tssList": [
+      {
+        "trainingStressScore": 62.4,
+        "calculationMethod": "HR",
+        "intensityFactor": 0.84,
+        "normalizedPower": 210,
+        "averageGradeAdjustedPace": 4.75
+      },
+      {
+        "trainingStressScore": 58.1,
+        "calculationMethod": "POWER",
+        "intensityFactor": 0.78,
+        "normalizedPower": 198,
+        "averageGradeAdjustedPace": 4.95
+      }
+    ],
+    "extensions": [
+      {
+        "type": "FitnessExtension",
+        "vo2Max": 52.1,
+        "fitnessAge": 28
+      },
+      {
+        "type": "SummaryExtension",
+        "avgPower": 205,
+        "peakEpoc": 88
+      }
+    ]
+  },
+  "metadata": {}
+}
