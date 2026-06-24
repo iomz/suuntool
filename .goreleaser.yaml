@@ -37,17 +37,22 @@ archives:
       - LICENSE
       - CONTRIBUTING.md
 
-brews:
+homebrew_casks:
   - name: suuntool
+    ids:
+      - default
+    binaries:
+      - suuntool
     homepage: "https://github.com/tajchert/suuntool"
     description: "Unofficial CLI for the Suunto / Sports-Tracker API"
     license: "MIT"
     repository:
       owner: tajchert
       name: homebrew-tap
-    directory: Formula
-    test: |
-      assert_match "suuntool", shell_output("#{bin}/suuntool version")
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/suuntool"] if OS.mac?
 
 checksum:
   name_template: checksums.txt
@@ -91,9 +96,9 @@ release:
     > ⚠️ Unofficial, experimental, not affiliated with Suunto. May violate Suunto's TOS — use at your own risk.
   footer: |
     ---
-    **Install (Homebrew, once the tap formula is published):**
+    **Install (Homebrew, once the tap cask is published):**
     ```bash
-    brew install tajchert/tap/suuntool
+    brew install --cask tajchert/tap/suuntool
     ```
 
     **Install (Go):**

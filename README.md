@@ -60,7 +60,7 @@ $ suuntool wellness sleep --since 3d | jq -c '{date:.timestamp, nap:.entryData.i
 ## Install
 
 ```bash
-brew install tajchert/tap/suuntool
+brew install --cask tajchert/tap/suuntool
 ```
 
 Or from source:
